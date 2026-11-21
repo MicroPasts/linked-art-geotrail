@@ -64,6 +64,17 @@ npm run dev
 
 Open the address printed by Vite (normally `http://localhost:5173`).
 
+### Tests
+
+Run the automated unit and component tests with a supported Node.js version
+(20, 22, or 24 and newer):
+
+```bash
+npm test
+```
+
+The map component tests mock MapLibre; they do not exercise WebGL or remote basemaps.
+
 ## Install in a Third-Party npm Project
 
 Install the package and its React peer dependencies:

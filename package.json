@@ -47,6 +47,7 @@
     "build:docs": "BUILD_TARGET=docs vite build --outDir docs",
     "build:lib": "BUILD_TARGET=lib vite build --outDir dist-lib",
     "build:umd": "BUILD_TARGET=umd vite build --outDir dist-umd",
+    "test": "vitest run",
     "preview": "vite preview",
     "prepublishOnly": "npm run build:lib && npm run build:umd"
   },
@@ -67,9 +68,12 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "@testing-library/react": "^16.3.0",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^26.1.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
-    "vite": "^6.0.1"
+    "vite": "^6.0.1",
+    "vitest": "^4.1.12"
   }
 }
