@@ -1,19 +1,45 @@
 {
   "name": "@micropasts/linked-art-geotrail",
   "version": "0.1.1",
+  "description": "An interactive React component for visualizing Linked Art cultural heritage records as animated geospatial event arcs.",
+  "author": "Daniel Pett",
+  "license": "MIT",
+  "homepage": "https://micropasts.github.io/linked-art-geotrail/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MicroPasts/linked-art-geotrail.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MicroPasts/linked-art-geotrail/issues"
+  },
+  "keywords": [
+    "linked-art",
+    "linked-data",
+    "geospatial",
+    "maplibre",
+    "react",
+    "museum",
+    "cultural-heritage"
+  ],
   "type": "module",
   "main": "./dist-lib/linked-art-geotrail.cjs",
   "module": "./dist-lib/linked-art-geotrail.js",
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     ".": {
       "import": "./dist-lib/linked-art-geotrail.js",
-      "require": "./dist-lib/linked-art-geotrail.cjs"
+      "require": "./dist-lib/linked-art-geotrail.cjs",
+      "default": "./dist-lib/linked-art-geotrail.js"
     },
     "./style.css": "./dist-lib/linked-art-geotrail.css"
   },
   "files": [
     "dist-lib",
-    "dist-umd"
+    "dist-umd",
+    "README.md",
+    "LICENSE.md"
   ],
   "scripts": {
     "dev": "vite",
@@ -21,7 +47,15 @@
     "build:docs": "BUILD_TARGET=docs vite build --outDir docs",
     "build:lib": "BUILD_TARGET=lib vite build --outDir dist-lib",
     "build:umd": "BUILD_TARGET=umd vite build --outDir dist-umd",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepublishOnly": "npm run build:lib && npm run build:umd"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "lucide-react": "^0.460.0",
