@@ -50,20 +50,15 @@ export function DocsApp() {
         </div>
       </header>
 
-      <section className="px-6 py-3 bg-slate-900/60 border-b border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-        <p className="text-xs text-slate-400">{current.description}</p>
-        <pre className="text-[11px] font-mono bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sky-300 overflow-x-auto">
+    <section className="px-6 py-2.5 bg-slate-900/60 border-b border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <p className="text-xs text-slate-400 lg:max-w-md">{current.description}</p>
+        <code className="w-full lg:w-auto lg:min-w-[480px] lg:max-w-2xl shrink-0 text-[11px] font-mono bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sky-300 overflow-x-auto">
           {embedSnippet}
-        </pre>
+        </code>
       </section>
 
-      <div className="w-full h-[700px] shrink-0">
-        <App
-          key={current.id}
-          record={current.record}
-          allowInput={current.allowInput}
-          theme={current.theme}
-        />
+      <div className="w-screen h-[700px] shrink-0">
+        <App key={current.id} record={current.record} allowInput={current.allowInput} theme={current.theme} />
       </div>
     </div>
   );

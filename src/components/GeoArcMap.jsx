@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { buildBezierArc, sliceArcAtProgress } from '../lib/arcGeometry';
 import { compressLoadedImageToBlobUrl, getLightweightImageUrl } from '../lib/imageOptimizer';
@@ -16,6 +16,8 @@ const MAP_STYLES = {
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
   light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
 };
+
+const DEFAULT_ZOOM = 6;
 
 function ensureGeoTrailLayers(map, isLight) {
   if (!map.getSource('place-polygons')) {
@@ -85,7 +87,7 @@ function ensureGeoTrailLayers(map, isLight) {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['coalesce', ['get', 'color'], '#0284c7'],
-        'line-width': 3,
+        'line-width': 3.5,
         'line-opacity': 0.95,
       },
     });
@@ -168,16 +170,17 @@ export function GeoArcMap({
   events,
   activeLegIndex = 0,
   legProgress = 0,
+  isPlaying = false,
   onSelectEvent,
   theme = 'dark',
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const popupRef = useRef(null);
-  const isLoadedRef = useRef(false);
-  const hasStartedRef = useRef(false);
+  const hasCenteredStepRef = useRef(false);
+  const lastCenteredKeyRef = useRef(null);
   const currentStyleUrlRef = useRef(null);
-  const syncTickRef = useRef(0);
+  const [styleReady, setStyleReady] = useState(0);
 
   const isLight = theme === 'light';
   const targetStyleUrl = MAP_STYLES[isLight ? 'light' : 'dark'];
@@ -207,7 +210,20 @@ export function GeoArcMap({
     return arcs;
   }, [plottableEvents]);
 
-  // Initialize MapLibre GL once
+  // While animating from leg index `i` (0..N-2) toward `i+1`, the moving target is `plottableEvents[i + 1]`;
+  // otherwise the focused stop is `plottableEvents[activeLegIndex]`.
+  const targetEvent = useMemo(() => {
+    if (plottableEvents.length === 0) return null;
+    if (isPlaying && activeLegIndex < plottableEvents.length - 1) {
+      return plottableEvents[activeLegIndex + 1];
+    }
+    const selectedOrig = events?.[Math.min(activeLegIndex, (events?.length || 1) - 1)];
+    return (
+      plottableEvents.find((ev) => ev.index === selectedOrig?.index) ||
+      plottableEvents[Math.min(activeLegIndex, plottableEvents.length - 1)]
+    );
+  }, [events, plottableEvents, activeLegIndex, isPlaying]);
+
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
@@ -217,7 +233,7 @@ export function GeoArcMap({
       container: containerRef.current,
       style: targetStyleUrl,
       center: plottableEvents[0]?.coordinates || [5, 46],
-      zoom: 10,
+      zoom: DEFAULT_ZOOM,
       pitch: 24,
       attributionControl: false,
     });
@@ -225,9 +241,8 @@ export function GeoArcMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
     const handleReady = () => {
-      isLoadedRef.current = true;
       ensureGeoTrailLayers(map, isLight);
-      syncTickRef.current += 1;
+      setStyleReady((n) => n + 1);
     };
 
     map.on('load', handleReady);
@@ -257,115 +272,118 @@ export function GeoArcMap({
     const canvas = map.getCanvas();
     const handleContextLost = (e) => {
       e.preventDefault();
-      isLoadedRef.current = false;
+      setStyleReady(0);
     };
     const handleContextRestored = () => {
-      isLoadedRef.current = true;
       ensureGeoTrailLayers(map, isLight);
+      setStyleReady((n) => n + 1);
     };
 
     canvas.addEventListener('webglcontextlost', handleContextLost, false);
     canvas.addEventListener('webglcontextrestored', handleContextRestored, false);
 
+    const resizeObserver = new ResizeObserver(() => {
+      map.resize();
+    });
+    resizeObserver.observe(containerRef.current);
+
     mapRef.current = map;
     return () => {
+      resizeObserver.disconnect();
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       popupRef.current?.remove();
       popupRef.current = null;
       map.remove();
       mapRef.current = null;
-      isLoadedRef.current = false;
       currentStyleUrlRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Switch basemap style only when theme changes
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !isLoadedRef.current) return;
+    if (!map || styleReady === 0) return;
     if (currentStyleUrlRef.current === targetStyleUrl) return;
 
     currentStyleUrlRef.current = targetStyleUrl;
-    isLoadedRef.current = false;
+    setStyleReady(0);
     map.setStyle(targetStyleUrl);
-  }, [targetStyleUrl]);
+  }, [targetStyleUrl, styleReady]);
 
-  // Sync static arc & polygon data
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!map || styleReady === 0) return;
 
-    const syncStaticData = () => {
-      ensureGeoTrailLayers(map, isLight);
-      const ghostSource = map.getSource('ghost-arcs');
-      const polySource = map.getSource('place-polygons');
-      if (!ghostSource || !polySource) return;
+    ensureGeoTrailLayers(map, isLight);
+    const ghostSource = map.getSource('ghost-arcs');
+    const polySource = map.getSource('place-polygons');
+    if (!ghostSource || !polySource) return;
 
-      ghostSource.setData({
-        type: 'FeatureCollection',
-        features: legArcs.map((leg) => ({
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'LineString', coordinates: leg.coords },
-        })),
-      });
-
-      polySource.setData({
-        type: 'FeatureCollection',
-        features: plottableEvents
-          .filter((ev) => ev.polygon && ev.polygon.length > 0)
-          .map((ev) => ({
-            type: 'Feature',
-            properties: { title: ev.placeLabel },
-            geometry: { type: 'Polygon', coordinates: ev.polygon },
-          })),
-      });
-
-      if (plottableEvents.length > 0 && !hasStartedRef.current) {
-        map.jumpTo({
-          center: plottableEvents[0].coordinates,
-          zoom: 10,
-        });
-      }
-    };
-
-    if (isLoadedRef.current) {
-      syncStaticData();
-    } else {
-      map.once('load', syncStaticData);
-    }
-  }, [plottableEvents, legArcs, isLight, syncTickRef.current]);
-
-  // Focus & popup only once playback/stepping starts or user selects an event
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isLoadedRef.current || plottableEvents.length === 0) return;
-
-    const shouldMove = activeLegIndex > 0 || legProgress > 0;
-    if (!shouldMove && !hasStartedRef.current) {
-      return;
-    }
-    hasStartedRef.current = true;
-
-    const selectedOrig = events?.[Math.min(activeLegIndex, (events?.length || 1) - 1)];
-    const activeEvent =
-      plottableEvents.find((ev) => ev.index === selectedOrig?.index) ||
-      plottableEvents[Math.min(activeLegIndex, plottableEvents.length - 1)];
-    if (!activeEvent) return;
-
-    map.easeTo({
-      center: activeEvent.coordinates,
-      zoom: 10,
-      duration: 800,
+    ghostSource.setData({
+      type: 'FeatureCollection',
+      features: legArcs.map((leg) => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type: 'LineString', coordinates: leg.coords },
+      })),
     });
+
+    polySource.setData({
+      type: 'FeatureCollection',
+      features: plottableEvents
+        .filter((ev) => ev.polygon && ev.polygon.length > 0)
+        .map((ev) => ({
+          type: 'Feature',
+          properties: { title: ev.placeLabel },
+          geometry: { type: 'Polygon', coordinates: ev.polygon },
+        })),
+    });
+
+    if (plottableEvents.length > 0 && !hasCenteredStepRef.current) {
+      map.jumpTo({
+        center: plottableEvents[0].coordinates,
+        zoom: DEFAULT_ZOOM,
+      });
+    }
+  }, [plottableEvents, legArcs, isLight, styleReady]);
+
+  // Center camera smoothly on target stop whenever the target changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || styleReady === 0 || !targetEvent) return;
+
+    const focusKey = `${targetEvent.id ?? targetEvent.index}:${targetEvent.coordinates.join(',')}:${isPlaying ? 'play' : 'idle'}`;
+    if (lastCenteredKeyRef.current === focusKey) return;
+
+    const isInitialOrigin = activeLegIndex === 0 && !isPlaying && !hasCenteredStepRef.current;
+    lastCenteredKeyRef.current = focusKey;
+
+    if (isInitialOrigin) {
+      map.jumpTo({
+        center: targetEvent.coordinates,
+        zoom: DEFAULT_ZOOM,
+      });
+    } else {
+      hasCenteredStepRef.current = true;
+      map.easeTo({
+        center: targetEvent.coordinates,
+        zoom: DEFAULT_ZOOM,
+        duration: 1200,
+        essential: true,
+      });
+    }
+  }, [activeLegIndex, isPlaying, targetEvent, styleReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || styleReady === 0 || !targetEvent) return;
 
     popupRef.current?.remove();
 
-    const rawImg = activeEvent.images?.[0];
+    const rawImg = targetEvent.images?.[0];
     const lightUrl = rawImg ? getLightweightImageUrl(rawImg.url, { maxWidth: 420 }) : '';
-    const safeLabel = String(rawImg?.label || activeEvent.title).replace(/"/g, '&quot;');
+    const safeLabel = String(rawImg?.label || targetEvent.title).replace(/"/g, '&quot;');
 
     const imgHtml = lightUrl
       ? `<div class="w-full h-32 overflow-hidden ${
@@ -390,11 +408,11 @@ export function GeoArcMap({
         <div class="p-3">
           <div class="text-[11px] font-semibold uppercase tracking-wider ${
             isLight ? 'text-sky-700' : 'text-sky-400'
-          }">${activeEvent.dateDisplay}</div>
-          <div class="text-sm font-semibold mt-0.5 line-clamp-2">${activeEvent.title}</div>
+          }">${targetEvent.dateDisplay}</div>
+          <div class="text-sm font-semibold mt-0.5 line-clamp-2">${targetEvent.title}</div>
           <div class="text-xs ${
             isLight ? 'text-slate-600' : 'text-slate-400'
-          } mt-0.5 truncate">${activeEvent.placeLabel}</div>
+          } mt-0.5 truncate">${targetEvent.placeLabel}</div>
         </div>
       </div>
     `;
@@ -405,7 +423,7 @@ export function GeoArcMap({
       closeButton: true,
       closeOnClick: false,
     })
-      .setLngLat(activeEvent.coordinates)
+      .setLngLat(targetEvent.coordinates)
       .setHTML(html)
       .addTo(map);
 
@@ -429,12 +447,11 @@ export function GeoArcMap({
     }
 
     popupRef.current = popup;
-  }, [activeLegIndex, legProgress, events, plottableEvents, isLight]);
+  }, [targetEvent, isLight, styleReady]);
 
-  // Update progressive trail & transit marker
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !isLoadedRef.current || plottableEvents.length === 0) return;
+    if (!map || styleReady === 0 || plottableEvents.length === 0) return;
 
     ensureGeoTrailLayers(map, isLight);
     const trailSource = map.getSource('active-trail');
@@ -461,7 +478,8 @@ export function GeoArcMap({
 
     const trailFeatures = [];
 
-    for (let i = 0; i < activePlotIdx - 1 && i < legArcs.length; i++) {
+    // Draw all completed arcs prior to the active leg
+    for (let i = 0; i < activePlotIdx && i < legArcs.length; i++) {
       trailFeatures.push({
         type: 'Feature',
         properties: { color: CATEGORY_COLORS[legArcs[i].to.category] || CATEGORY_COLORS.other },
@@ -469,12 +487,11 @@ export function GeoArcMap({
       });
     }
 
-    let headCoord = plottableEvents[0].coordinates;
+    let headCoord = plottableEvents[activePlotIdx].coordinates;
 
-    if (activePlotIdx === 0) {
-      headCoord = plottableEvents[0].coordinates;
-    } else if (activePlotIdx - 1 < legArcs.length) {
-      const currentLeg = legArcs[activePlotIdx - 1];
+    // Draw the currently advancing arc from `activePlotIdx` -> `activePlotIdx + 1`
+    if (activePlotIdx < legArcs.length && (isPlaying || legProgress > 0)) {
+      const currentLeg = legArcs[activePlotIdx];
       const { trail, head } = sliceArcAtProgress(currentLeg.coords, legProgress);
       headCoord = head;
       if (trail.length >= 2) {
@@ -497,7 +514,7 @@ export function GeoArcMap({
         },
       ],
     });
-  }, [activeLegIndex, legProgress, plottableEvents, legArcs, isLight, syncTickRef.current]);
+  }, [activeLegIndex, legProgress, isPlaying, plottableEvents, legArcs, isLight, styleReady]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 }

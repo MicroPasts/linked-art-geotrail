@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { enrichTrailWithGeocoding, extractLinkedArtTrail } from './lib/linkedArtExtractor';
 import { loadLinkedArtInput } from './lib/linkedArtFetcher';
 import { SAMPLE_LINKED_ART_RECORD } from './data/sampleRecord';
@@ -7,6 +7,8 @@ import { EventSidebar } from './components/EventSidebar';
 const GeoArcMap = lazy(() =>
   import('./components/GeoArcMap').then((m) => ({ default: m.GeoArcMap }))
 );
+
+const LEG_DURATION_MS = 4500;
 
 export function App({
   record = SAMPLE_LINKED_ART_RECORD,
@@ -20,6 +22,9 @@ export function App({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [parseError, setParseError] = useState(null);
+
+  const legIndexRef = useRef(activeLegIndex);
+  legIndexRef.current = activeLegIndex;
 
   useEffect(() => {
     setTheme(initialTheme);
@@ -55,23 +60,23 @@ export function App({
 
     let frameId;
     let lastTime = performance.now();
-    const LEG_DURATION_MS = 2200;
 
     const tick = (now) => {
-      const dt = now - lastTime;
+      const dt = Math.min(now - lastTime, 100);
       lastTime = now;
 
       setLegProgress((prev) => {
         const next = prev + dt / LEG_DURATION_MS;
         if (next >= 1) {
-          setActiveLegIndex((currIdx) => {
-            if (currIdx < trail.events.length - 1) {
-              return currIdx + 1;
-            }
-            setIsPlaying(false);
-            return currIdx;
-          });
-          return activeLegIndex < trail.events.length - 1 ? 0 : 1;
+          const currIdx = legIndexRef.current;
+          if (currIdx < trail.events.length - 1) {
+            const nextIdx = currIdx + 1;
+            legIndexRef.current = nextIdx;
+            setActiveLegIndex(nextIdx);
+            return 0;
+          }
+          setIsPlaying(false);
+          return 1;
         }
         return next;
       });
@@ -81,7 +86,7 @@ export function App({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying, activeLegIndex, trail.events.length]);
+  }, [isPlaying, trail.events.length]);
 
   const handleLoadInput = async (raw) => {
     setIsLoading(true);
@@ -105,7 +110,7 @@ export function App({
   const handleSelectStep = (idx) => {
     setIsPlaying(false);
     setActiveLegIndex(idx);
-    setLegProgress(1);
+    setLegProgress(idx > 0 ? 1 : 0);
   };
 
   const handleReset = () => {
@@ -120,7 +125,7 @@ export function App({
       setIsPlaying(false);
       return;
     }
-    if (activeLegIndex >= trail.events.length - 1 && legProgress >= 1) {
+    if (activeLegIndex >= trail.events.length - 1) {
       setActiveLegIndex(0);
       setLegProgress(0);
     }
@@ -170,6 +175,7 @@ export function App({
             events={trail.events}
             activeLegIndex={activeLegIndex}
             legProgress={legProgress}
+            isPlaying={isPlaying}
             onSelectEvent={handleSelectStep}
             theme={theme}
           />

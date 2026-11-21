@@ -1,13 +1,31 @@
 import { SAMPLE_LINKED_ART_RECORD } from './sampleRecord';
+import { SAMPLE_GETTY_LINKED_ART_RECORD } from './gettyRecord';
+import { SAMPLE_PIEBALD_RECORD } from './piebaldRecord';
 
 export const EXAMPLE_PRESETS = [
+{
+    id: 'piebald',
+    title: 'Piebald Example',
+    description: 'Interactive mode with Piebald record.',
+    record: SAMPLE_PIEBALD_RECORD,
+    allowInput: false,
+    theme: 'dark',
+  },
   {
     id: 'severus-medallion',
     title: 'Roman Imperial Medallion (WKT + Polygons)',
     description: 'Interactive mode with URL/JSON input enabled, WKT point & polygon findspot, and dark theme.',
     record: SAMPLE_LINKED_ART_RECORD,
-    allowInput: true,
+    allowInput: false,
     theme: 'dark',
+  },
+  {
+    id: 'belvedere',
+    title: 'Belvedere Antinous - Getty',
+    description: 'Interactive mode',
+    record: SAMPLE_GETTY_LINKED_ART_RECORD,
+    allowInput: true,
+    theme: 'dark'
   },
   {
     id: 'readonly-light-embed',

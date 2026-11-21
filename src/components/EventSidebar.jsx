@@ -73,7 +73,13 @@ export function EventSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-[410px] h-[48vh] lg:h-full border-t lg:border-t-0 lg:border-r flex flex-col z-10 transition-colors ${ isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900 border-slate-800 text-slate-100' }`} > <div className={`p-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
+      className={`w-full lg:w-[410px] h-[48vh] lg:h-full border-t lg:border-t-0 lg:border-r flex flex-col z-10 transition-colors ${
+        isLight
+          ? 'bg-white border-slate-200 text-slate-900'
+          : 'bg-slate-900 border-slate-800 text-slate-100'
+      }`}
+    >
+      <div className={`p-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <span
@@ -278,7 +284,18 @@ export function EventSidebar({
 
               {ev.actors.length > 0 && (
                 <div
-                  className={`flex items-center gap-1.5 text-xs mt-1 ${ isLight ? 'text-slate-600' : 'text-slate-400' }`} > <Users className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">{ev.actors.join(', ')}</span> </div> )}  {ev.description && ( <p className={`text-xs mt-1.5 leading-relaxed ${
+                  className={`flex items-center gap-1.5 text-xs mt-1 ${
+                    isLight ? 'text-slate-600' : 'text-slate-400'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{ev.actors.join(', ')}</span>
+                </div>
+              )}
+
+              {ev.description && (
+                <p
+                  className={`text-xs mt-1.5 leading-relaxed ${
                     isLight ? 'text-slate-600' : 'text-slate-400'
                   }`}
                 >
