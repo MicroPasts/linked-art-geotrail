@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
 import { enrichTrailWithGeocoding, extractLinkedArtTrail } from './lib/linkedArtExtractor';
 import { loadLinkedArtInput } from './lib/linkedArtFetcher';
 import { SAMPLE_LINKED_ART_RECORD } from './data/sampleRecord';
@@ -23,9 +23,6 @@ export function App({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [parseError, setParseError] = useState(null);
-
-  const legIndexRef = useRef(activeLegIndex);
-  legIndexRef.current = activeLegIndex;
 
   useEffect(() => {
     setTheme(initialTheme);
@@ -63,6 +60,8 @@ export function App({
     let lastTime = performance.now();
     let lastRenderTime = lastTime;
     let elapsedMs = 0;
+    let currentIndex = activeLegIndex;
+    let progress = legProgress;
 
     const tick = (now) => {
       const dt = Math.min(now - lastTime, 100);
@@ -71,22 +70,19 @@ export function App({
 
       if (now - lastRenderTime >= ANIMATION_FRAME_MS) {
         lastRenderTime = now;
-        setLegProgress((prev) => {
-          const next = prev + elapsedMs / LEG_DURATION_MS;
-          elapsedMs = 0;
-          if (next >= 1) {
-            const currIdx = legIndexRef.current;
-            if (currIdx < trail.events.length - 1) {
-              const nextIdx = currIdx + 1;
-              legIndexRef.current = nextIdx;
-              setActiveLegIndex(nextIdx);
-              return 0;
-            }
+        progress += elapsedMs / LEG_DURATION_MS;
+        elapsedMs = 0;
+        if (progress >= 1) {
+          currentIndex += 1;
+          setActiveLegIndex(currentIndex);
+          progress = 0;
+          if (currentIndex >= trail.events.length - 1) {
+            setLegProgress(progress);
             setIsPlaying(false);
-            return 1;
+            return;
           }
-          return next;
-        });
+        }
+        setLegProgress(progress);
       }
 
       frameId = requestAnimationFrame(tick);
@@ -118,15 +114,13 @@ export function App({
   const handleSelectStep = useCallback((idx) => {
     setIsPlaying(false);
     setActiveLegIndex(idx);
-    setLegProgress(idx > 0 ? 1 : 0);
-    legIndexRef.current = idx;
+    setLegProgress(0);
   }, []);
 
   const handleReset = useCallback(() => {
     setIsPlaying(false);
     setActiveLegIndex(0);
     setLegProgress(0);
-    legIndexRef.current = 0;
   }, []);
 
   const handleTogglePlay = useCallback(() => {

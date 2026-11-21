@@ -180,6 +180,7 @@ export function GeoArcMapComponent({
   const hasCenteredStepRef = useRef(false);
   const lastCenteredKeyRef = useRef(null);
   const currentStyleUrlRef = useRef(null);
+  const isStyleReadyRef = useRef(false);
   const isReplacingPopupRef = useRef(false);
   const [styleReady, setStyleReady] = useState(0);
   const [popupDismissed, setPopupDismissed] = useState(false);
@@ -244,11 +245,11 @@ export function GeoArcMapComponent({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
     const handleReady = () => {
-      ensureGeoTrailLayers(map, isLight);
+      ensureGeoTrailLayers(map, currentStyleUrlRef.current === MAP_STYLES.light);
+      isStyleReadyRef.current = true;
       setStyleReady((n) => n + 1);
     };
 
-    map.on('load', handleReady);
     map.on('style.load', handleReady);
 
     map.on('error', (err) => {
@@ -277,10 +278,12 @@ export function GeoArcMapComponent({
     const canvas = map.getCanvas();
     const handleContextLost = (e) => {
       e.preventDefault();
+      isStyleReadyRef.current = false;
       setStyleReady(0);
     };
     const handleContextRestored = () => {
-      ensureGeoTrailLayers(map, isLight);
+      ensureGeoTrailLayers(map, currentStyleUrlRef.current === MAP_STYLES.light);
+      isStyleReadyRef.current = true;
       setStyleReady((n) => n + 1);
     };
 
@@ -302,6 +305,7 @@ export function GeoArcMapComponent({
       map.remove();
       mapRef.current = null;
       currentStyleUrlRef.current = null;
+      isStyleReadyRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -312,13 +316,16 @@ export function GeoArcMapComponent({
     if (currentStyleUrlRef.current === targetStyleUrl) return;
 
     currentStyleUrlRef.current = targetStyleUrl;
+    isStyleReadyRef.current = false;
     setStyleReady(0);
-    map.setStyle(targetStyleUrl);
+    // Style diffing removes custom layers without emitting style.load.
+    map.setStyle(targetStyleUrl, { diff: false });
   }, [targetStyleUrl, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || styleReady === 0) return;
+    if (!map || styleReady === 0 || !isStyleReadyRef.current ||
+        currentStyleUrlRef.current !== targetStyleUrl) return;
 
     ensureGeoTrailLayers(map, isLight);
     const ghostSource = map.getSource('ghost-arcs');
@@ -356,7 +363,8 @@ export function GeoArcMapComponent({
   // Center camera smoothly on target stop whenever the target changes
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || styleReady === 0 || !targetEvent) return;
+    if (!map || styleReady === 0 || !isStyleReadyRef.current ||
+        currentStyleUrlRef.current !== targetStyleUrl || !targetEvent) return;
 
     const focusKey = `${targetEvent.id ?? targetEvent.index}:${targetEvent.coordinates.join(',')}:${isPlaying ? 'play' : 'idle'}`;
     if (lastCenteredKeyRef.current === focusKey) return;
@@ -382,7 +390,8 @@ export function GeoArcMapComponent({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || styleReady === 0 || !targetEvent) return;
+    if (!map || styleReady === 0 || !isStyleReadyRef.current ||
+        currentStyleUrlRef.current !== targetStyleUrl || !targetEvent) return;
 
     if (popupDismissed) {
       isReplacingPopupRef.current = true;
@@ -463,7 +472,8 @@ export function GeoArcMapComponent({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || styleReady === 0 || plottableEvents.length === 0) return;
+    if (!map || styleReady === 0 || !isStyleReadyRef.current ||
+        currentStyleUrlRef.current !== targetStyleUrl || plottableEvents.length === 0) return;
 
     ensureGeoTrailLayers(map, isLight);
     const trailSource = map.getSource('active-trail');
