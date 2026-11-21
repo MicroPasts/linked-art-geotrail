@@ -57,7 +57,7 @@ export function DocsApp() {
         </pre>
       </section>
 
-      <div className="flex-1 min-h-[640px]">
+      <div className="w-full h-[700px] shrink-0">
         <App
           key={current.id}
           record={current.record}
