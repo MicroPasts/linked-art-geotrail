@@ -1,29 +1,41 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'path';
+import fs from 'fs';
+
+function promoteDocsIndexPlugin(enabled) {
+  return {
+    name: 'promote-docs-index',
+    closeBundle() {
+      if (!enabled) return;
+
+      const outDir = resolve(__dirname, 'docs');
+      const nestedHtml = resolve(outDir, 'examples/index.html');
+      const rootHtml = resolve(outDir, 'index.html');
+
+      if (!fs.existsSync(nestedHtml)) return;
+
+      let html = fs.readFileSync(nestedHtml, 'utf8');
+      // Ensure asset & stylesheet paths resolve from /docs/index.html
+      html = html.replace(/(src|href)="\.\.\/assets\//g, '$1="./assets/');
+      html = html.replace(/(src|href)="\.\/examples\//g, '$1="./');
+
+      fs.writeFileSync(rootHtml, html, 'utf8');
+      fs.rmSync(resolve(outDir, 'examples'), { recursive: true, force: true });
+    },
+  };
+}
 
 export default defineConfig(() => {
   const isDocsOnly = process.env.BUILD_TARGET === 'docs';
-  const isUmd = process.env.BUILD_TARGET === 'umd';
 
-  const config = {
-    plugins: [react()],
-    base: './',
+  return {
+    plugins: [react(), promoteDocsIndexPlugin(isDocsOnly)],
+    base: isDocsOnly ? './' : './',
     build: {
-      outDir: isUmd ? 'dist-umd' : isDocsOnly ? 'docs' : 'dist',
-      emptyOutDir: true,
-    },
-  };
-
-  if (isUmd) {
-    config.build.lib = {
-      entry: resolve(__dirname, 'src/umd.jsx'),
-      name: 'LinkedArtGeoTrail',
-      formats: ['umd'],
-      fileName: () => 'linked-art-geotrail.umd.js',
-    };
-  } else {
-    config.build.rollupOptions = {
+      outDir: isDocsOnly ? 'docs' : 'dist',
+      emptyOutDir: !isDocsOnly,
+      rollupOptions: {
         input: isDocsOnly
           ? { index: resolve(__dirname, 'examples/index.html') }
           : {
@@ -46,8 +58,7 @@ export default defineConfig(() => {
             }
           },
         },
-      };
-  }
-
-  return config;
+      },
+    },
+  };
 });
