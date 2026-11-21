@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { enrichTrailWithGeocoding, extractLinkedArtTrail } from './lib/linkedArtExtractor';
 import { loadLinkedArtInput } from './lib/linkedArtFetcher';
 import { SAMPLE_LINKED_ART_RECORD } from './data/sampleRecord';
@@ -9,6 +9,7 @@ const GeoArcMap = lazy(() =>
 );
 
 const LEG_DURATION_MS = 4500;
+const ANIMATION_FRAME_MS = 1000 / 30;
 
 export function App({
   record = SAMPLE_LINKED_ART_RECORD,
@@ -60,26 +61,33 @@ export function App({
 
     let frameId;
     let lastTime = performance.now();
+    let lastRenderTime = lastTime;
+    let elapsedMs = 0;
 
     const tick = (now) => {
       const dt = Math.min(now - lastTime, 100);
       lastTime = now;
+      elapsedMs += dt;
 
-      setLegProgress((prev) => {
-        const next = prev + dt / LEG_DURATION_MS;
-        if (next >= 1) {
-          const currIdx = legIndexRef.current;
-          if (currIdx < trail.events.length - 1) {
-            const nextIdx = currIdx + 1;
-            legIndexRef.current = nextIdx;
-            setActiveLegIndex(nextIdx);
-            return 0;
+      if (now - lastRenderTime >= ANIMATION_FRAME_MS) {
+        lastRenderTime = now;
+        setLegProgress((prev) => {
+          const next = prev + elapsedMs / LEG_DURATION_MS;
+          elapsedMs = 0;
+          if (next >= 1) {
+            const currIdx = legIndexRef.current;
+            if (currIdx < trail.events.length - 1) {
+              const nextIdx = currIdx + 1;
+              legIndexRef.current = nextIdx;
+              setActiveLegIndex(nextIdx);
+              return 0;
+            }
+            setIsPlaying(false);
+            return 1;
           }
-          setIsPlaying(false);
-          return 1;
-        }
-        return next;
-      });
+          return next;
+        });
+      }
 
       frameId = requestAnimationFrame(tick);
     };
@@ -88,7 +96,7 @@ export function App({
     return () => cancelAnimationFrame(frameId);
   }, [isPlaying, trail.events.length]);
 
-  const handleLoadInput = async (raw) => {
+  const handleLoadInput = useCallback(async (raw) => {
     setIsLoading(true);
     try {
       const doc = await loadLinkedArtInput(raw);
@@ -105,21 +113,23 @@ export function App({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
-  const handleSelectStep = (idx) => {
+  const handleSelectStep = useCallback((idx) => {
     setIsPlaying(false);
     setActiveLegIndex(idx);
     setLegProgress(idx > 0 ? 1 : 0);
-  };
+    legIndexRef.current = idx;
+  }, []);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setIsPlaying(false);
     setActiveLegIndex(0);
     setLegProgress(0);
-  };
+    legIndexRef.current = 0;
+  }, []);
 
-  const handleTogglePlay = () => {
+  const handleTogglePlay = useCallback(() => {
     if (trail.events.length < 2) return;
     if (isPlaying) {
       setIsPlaying(false);
@@ -130,7 +140,7 @@ export function App({
       setLegProgress(0);
     }
     setIsPlaying(true);
-  };
+  }, [activeLegIndex, isPlaying, trail.events.length]);
 
   const isLight = theme === 'light';
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Play,
   Pause,
@@ -34,7 +34,7 @@ const BADGE_STYLES = {
   },
 };
 
-export function EventSidebar({
+export const EventSidebar = React.memo(function EventSidebar({
   trail,
   activeLegIndex,
   isPlaying,
@@ -50,9 +50,17 @@ export function EventSidebar({
   const [showJsonInput, setShowJsonInput] = useState(false);
   const [rawInput, setRawInput] = useState('');
   const [lightboxImage, setLightboxImage] = useState(null);
+  const eventCardRefs = useRef([]);
 
   const isLight = theme === 'light';
   const badges = BADGE_STYLES[isLight ? 'light' : 'dark'];
+
+  useEffect(() => {
+    eventCardRefs.current[activeLegIndex]?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+    });
+  }, [activeLegIndex, trail.events.length]);
 
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -221,6 +229,9 @@ export function EventSidebar({
 
           return (
             <div
+              ref={(node) => {
+                eventCardRefs.current[ev.index] = node;
+              }}
               key={ev.id}
               onClick={() => onSelectStep(ev.index)}
               className={`rounded-xl p-3 border cursor-pointer transition ${
@@ -375,4 +386,4 @@ export function EventSidebar({
       )}
     </aside>
   );
-}
+});

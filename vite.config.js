@@ -27,6 +27,43 @@ function promoteDocsIndexPlugin(enabled) {
 
 export default defineConfig(() => {
   const isDocsOnly = process.env.BUILD_TARGET === 'docs';
+  const isLib = process.env.BUILD_TARGET === 'lib';
+  const isUmd = process.env.BUILD_TARGET === 'umd';
+
+  if (isLib || isUmd) {
+    return {
+      plugins: [react()],
+      base: './',
+      build: {
+        outDir: isLib ? 'dist-lib' : 'dist-umd',
+        emptyOutDir: true,
+        lib: {
+          entry: resolve(__dirname, isUmd ? 'src/umd.jsx' : 'src/index.jsx'),
+          name: 'LinkedArtGeoTrail',
+          formats: isUmd ? ['umd'] : ['es', 'cjs'],
+          fileName: (format) => {
+            if (format === 'cjs') return 'linked-art-geotrail.cjs';
+            if (isUmd) return 'linked-art-geotrail.umd.js';
+            return 'linked-art-geotrail.js';
+          },
+        },
+        rollupOptions: isLib
+          ? {
+              external: ['react', 'react-dom', 'react-dom/client', 'lucide-react', 'maplibre-gl'],
+              output: {
+                globals: {
+                  react: 'React',
+                  'react-dom': 'ReactDOM',
+                  'react-dom/client': 'ReactDOM',
+                  'lucide-react': 'LucideReact',
+                  'maplibre-gl': 'maplibregl',
+                },
+              },
+            }
+          : undefined,
+      },
+    };
+  }
 
   return {
     plugins: [react(), promoteDocsIndexPlugin(isDocsOnly)],

@@ -1,4 +1,4 @@
-# Linked Art GeoTrail
+# @micropasts/linked-art-geotrail
 
 An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+json`) cultural heritage records. It uses React 18, Vite, Tailwind CSS, Lucide, and MapLibre GL, and complements [`linked-art-viewer`](https://github.com/MicroPasts/linked-art-viewer) and [`provenance-timeline`](https://github.com/MicroPasts/provenance-timeline).
 
@@ -17,17 +17,31 @@ An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+j
 ```text
 linked-art-geotrail/
 ├── index.html
+├── examples/
+│   └── index.html
 ├── package.json
 ├── postcss.config.js
 ├── tailwind.config.js
 ├── vite.config.js
 ├── README.md
+├── LICENSE.md
+├── dist/
+├── dist-lib/
+├── dist-umd/
+├── docs/
 └── src/
     ├── main.jsx
+    ├── index.jsx
     ├── umd.jsx
     ├── index.css
     ├── App.jsx
+    ├── docs/
+    │   ├── main.jsx
+    │   └── DocsApp.jsx
     ├── data/
+    │   ├── exampleRecords.js
+    │   ├── gettyRecord.js
+    │   ├── piebaldRecord.js
     │   └── sampleRecord.js
     ├── lib/
     │   ├── arcGeometry.js
@@ -49,6 +63,54 @@ npm run dev
 ```
 
 Open the address printed by Vite (normally `http://localhost:5173`).
+
+## Install in a Third-Party npm Project
+
+Install the package and its React peer dependencies:
+
+```bash
+npm install @micropasts/linked-art-geotrail react react-dom
+```
+
+Import the component and stylesheet, then give it a sized container:
+
+```jsx
+import GeoTrail from '@micropasts/linked-art-geotrail';
+import '@micropasts/linked-art-geotrail/style.css';
+
+export function MuseumObjectTrail({ record }) {
+  return (
+    <div style={{ height: '700px', width: '100%' }}>
+      <GeoTrail
+        record={record}
+        allowInput={false}
+        theme="light"
+      />
+    </div>
+  );
+}
+```
+
+When developing with React 18, the package uses the same React instance supplied by the host project. The host must also provide React DOM. The component bundles Lucide and includes MapLibre styles, but it does not bundle React.
+
+The package also exports `App` as a named export:
+
+```jsx
+import { App } from '@micropasts/linked-art-geotrail';
+```
+
+For a package from this repository rather than a published registry release:
+
+```bash
+npm install github:MicroPasts/linked-art-geotrail
+```
+
+Publishing and installing the scoped npm package requires npm registry access to `@micropasts`. A release build is produced with:
+
+```bash
+npm run build:lib
+npm publish --access public
+```
 
 ### Static app build
 

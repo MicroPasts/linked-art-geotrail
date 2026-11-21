@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { buildBezierArc, sliceArcAtProgress } from '../lib/arcGeometry';
-import { compressLoadedImageToBlobUrl, getLightweightImageUrl } from '../lib/imageOptimizer';
+import { getLightweightImageUrl } from '../lib/imageOptimizer';
 
 const CATEGORY_COLORS = {
   production: '#d97706',
@@ -166,7 +166,7 @@ function ensureGeoTrailLayers(map, isLight) {
   }
 }
 
-export function GeoArcMap({
+export function GeoArcMapComponent({
   events,
   activeLegIndex = 0,
   legProgress = 0,
@@ -430,15 +430,6 @@ export function GeoArcMap({
     const popupEl = popup.getElement();
     const popupImg = popupEl?.querySelector('img[data-popup-img]');
     if (popupImg && rawImg?.url) {
-      popupImg.addEventListener('load', () => {
-        const compressed = compressLoadedImageToBlobUrl(popupImg, {
-          maxWidth: 420,
-          quality: 0.72,
-        });
-        if (compressed && compressed.length < popupImg.src.length) {
-          popupImg.src = compressed;
-        }
-      });
       popupImg.addEventListener('error', () => {
         if (popupImg.src !== rawImg.url) {
           popupImg.src = rawImg.url;
@@ -518,3 +509,5 @@ export function GeoArcMap({
 
   return <div ref={containerRef} className="w-full h-full" />;
 }
+
+export const GeoArcMap = React.memo(GeoArcMapComponent);
