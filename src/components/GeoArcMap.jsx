@@ -180,7 +180,10 @@ export function GeoArcMapComponent({
   const hasCenteredStepRef = useRef(false);
   const lastCenteredKeyRef = useRef(null);
   const currentStyleUrlRef = useRef(null);
+  const isReplacingPopupRef = useRef(false);
   const [styleReady, setStyleReady] = useState(0);
+  const [popupDismissed, setPopupDismissed] = useState(false);
+  const [popupRequest, setPopupRequest] = useState(0);
 
   const isLight = theme === 'light';
   const targetStyleUrl = MAP_STYLES[isLight ? 'light' : 'dark'];
@@ -259,6 +262,8 @@ export function GeoArcMapComponent({
       const feature = e.features?.[0];
       if (!feature?.properties) return;
       const origIdx = Number(feature.properties.origIndex);
+      setPopupDismissed(false);
+      setPopupRequest((request) => request + 1);
       onSelectEvent?.(Number.isFinite(origIdx) ? origIdx : Number(feature.properties.index));
     });
 
@@ -379,7 +384,17 @@ export function GeoArcMapComponent({
     const map = mapRef.current;
     if (!map || styleReady === 0 || !targetEvent) return;
 
+    if (popupDismissed) {
+      isReplacingPopupRef.current = true;
+      popupRef.current?.remove();
+      popupRef.current = null;
+      isReplacingPopupRef.current = false;
+      return;
+    }
+
+    isReplacingPopupRef.current = true;
     popupRef.current?.remove();
+    isReplacingPopupRef.current = false;
 
     const rawImg = targetEvent.images?.[0];
     const lightUrl = rawImg ? getLightweightImageUrl(rawImg.url, { maxWidth: 420 }) : '';
@@ -427,6 +442,12 @@ export function GeoArcMapComponent({
       .setHTML(html)
       .addTo(map);
 
+    popup.on('close', () => {
+      if (!isReplacingPopupRef.current) {
+        setPopupDismissed(true);
+      }
+    });
+
     const popupEl = popup.getElement();
     const popupImg = popupEl?.querySelector('img[data-popup-img]');
     if (popupImg && rawImg?.url) {
@@ -438,7 +459,7 @@ export function GeoArcMapComponent({
     }
 
     popupRef.current = popup;
-  }, [targetEvent, isLight, styleReady]);
+  }, [targetEvent, isLight, styleReady, popupDismissed, popupRequest]);
 
   useEffect(() => {
     const map = mapRef.current;
