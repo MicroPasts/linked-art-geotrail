@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import App from '../App';
 import { EXAMPLE_PRESETS } from '../data/exampleRecords';
 
+const isStandaloneDocs = typeof __DOCS_ONLY__ !== 'undefined' && __DOCS_ONLY__;
+
 export function DocsApp() {
   const [selectedId, setSelectedId] = useState(EXAMPLE_PRESETS[0].id);
   const current = EXAMPLE_PRESETS.find((p) => p.id === selectedId) || EXAMPLE_PRESETS[0];
@@ -37,12 +39,14 @@ export function DocsApp() {
               {preset.title}
             </button>
           ))}
-          <a
-            href="../"
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 border border-slate-700 text-slate-300 hover:border-sky-500"
-          >
-            Full App
-          </a>
+          {!isStandaloneDocs && (
+            <a
+              href="../index.html"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-950 border border-slate-700 text-slate-300 hover:border-sky-500"
+            >
+              Full App
+            </a>
+          )}
         </div>
       </header>
 
