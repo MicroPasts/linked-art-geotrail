@@ -16,7 +16,6 @@ function promoteDocsIndexPlugin(enabled) {
       if (!fs.existsSync(nestedHtml)) return;
 
       let html = fs.readFileSync(nestedHtml, 'utf8');
-      // Ensure asset & stylesheet paths resolve from /docs/index.html
       html = html.replace(/(src|href)="\.\.\/assets\//g, '$1="./assets/');
       html = html.replace(/(src|href)="\.\/examples\//g, '$1="./');
 
@@ -31,7 +30,10 @@ export default defineConfig(() => {
 
   return {
     plugins: [react(), promoteDocsIndexPlugin(isDocsOnly)],
-    base: isDocsOnly ? './' : './',
+    base: './',
+    define: {
+      __DOCS_ONLY__: JSON.stringify(isDocsOnly),
+    },
     build: {
       outDir: isDocsOnly ? 'docs' : 'dist',
       emptyOutDir: !isDocsOnly,
