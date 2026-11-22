@@ -4,6 +4,8 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setWorkerUrl } from 'maplibre-gl';
 import { GeoArcMap } from './GeoArcMap';
+import { extractLinkedArtTrail } from '../lib/linkedArtExtractor';
+import { SAMPLE_PIEBALD_RECORD } from '../data/piebaldRecord';
 
 const mocks = vi.hoisted(() => ({ maps: [], popups: [] }));
 
@@ -160,6 +162,26 @@ describe('map style and popup lifecycle', () => {
     expect(trail()[1].geometry.coordinates.at(-1)).toEqual([190, 75]);
     expect(map.getSource('event-nodes').data.features.map((node) => node.properties.origIndex)).toEqual([0, 2, 3]);
     expect(mocks.popups.at(-1).coordinates).toEqual(stops[3].coordinates);
+  });
+
+  it('draws the Piebald Horse final leg from Versailles to the Getty Center', () => {
+    const stops = extractLinkedArtTrail(SAMPLE_PIEBALD_RECORD).events;
+    const { rerender } = render(<GeoArcMap events={stops} activeLegIndex={22} isPlaying legProgress={0.5} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    const features = () => map.getSource('active-trail').data.features;
+    const nodes = () => map.getSource('event-nodes').data.features;
+    const currentTrail = features().at(-1).geometry.coordinates;
+    expect(currentTrail[0]).toEqual(stops[22].coordinates);
+    expect(currentTrail.at(-1)).not.toEqual(stops[23].coordinates);
+    expect(nodes().some((node) => node.properties.origIndex === 23)).toBe(false);
+    expect(map.jumpTo).toHaveBeenLastCalledWith({ center: currentTrail.at(-1) });
+    rerender(<GeoArcMap events={stops} activeLegIndex={23} />);
+    const endpoint = features().at(-1).geometry.coordinates.at(-1);
+    expect(endpoint[0]).toBeCloseTo(stops[23].coordinates[0], 6);
+    expect(endpoint[1]).toBeCloseTo(stops[23].coordinates[1], 6);
+    expect(nodes().find((node) => node.properties.origIndex === 23).properties.color).toBe('#e11d48');
+    expect(mocks.popups.at(-1).coordinates).toEqual(stops[23].coordinates);
   });
 
   it('switches basemaps without losing trail state, popup dismissal or custom theme styles', () => {

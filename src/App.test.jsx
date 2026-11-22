@@ -3,6 +3,7 @@ import React, { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
+import { SAMPLE_PIEBALD_RECORD } from './data/piebaldRecord';
 
 vi.mock('./components/GeoArcMap', () => ({
   GeoArcMap: ({ activeLegIndex, legProgress, isPlaying }) => (
@@ -69,6 +70,21 @@ describe('record loader', () => {
 });
 
 describe('playback in Strict Mode', () => {
+  it('plays the Piebald Horse final leg through to its last event', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) });
+    vi.stubGlobal('fetch', fetch);
+    render(<StrictMode><App record={SAMPLE_PIEBALD_RECORD} /></StrictMode>);
+    await act(async () => {});
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '22' } });
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(mapState().activeLegIndex).toBe(22);
+    expect(mapState().legProgress).toBeGreaterThan(0.3);
+    expect(mapState().legProgress).toBeLessThan(0.6);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(mapState()).toEqual({ activeLegIndex: 23, legProgress: 0, isPlaying: false });
+  });
+
   it('pauses at a long-distance arrival, preserves the pause, then draws the final leg', async () => {
     const journey = {
       ...record,

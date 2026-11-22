@@ -325,7 +325,7 @@ reflects the supplied map colours.
 2. **Discovery (`encountered` / `found_by`):** Captures findspot or archaeological encounter events and any associated `POLYGON` or `POINT` geometries.
 3. **Provenance (`changed_ownership_through`):** Reads ownership transfers and nested `part_of` provenance activities, timespans, and provenance location statements (`aat:300444175`).
 4. **Exhibitions (`used_for` / `member_of[].used_for`):** Collects exhibition activities and venues.
-5. **Current Location (`current_location`):** Plots repository locations; if `current_location` is an internal space (such as Getty `"Storage"`, `aat:300004465`) without WKT coordinates, it pairs the label with `current_owner` institution details for geocoding.
+5. **Current Location (`current_location`):** Plots repository locations. For internal storage (`aat:300004465`) or galleries (`aat:300240057`) without WKT coordinates, the owner's institution can supply an approximate location when the room itself cannot be resolved.
 
 ## License
 

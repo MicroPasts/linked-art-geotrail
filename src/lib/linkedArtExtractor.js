@@ -199,6 +199,7 @@ function resolvePlace(placeInput) {
     uri: place.id,
     wkt,
     isStorage: hasClassification(place, '300004465'),
+    isGallery: hasClassification(place, '300240057'),
     images: extractImages(place, 'place'),
   };
 }
@@ -222,9 +223,11 @@ export function extractLinkedArtTrail(doc) {
     images = [],
     defaultOrder,
     precisionNote,
+    fallbackPlaceLabel,
   }) => {
     const parsedWkt = parseWKT(wkt);
-    const cachedCoords = parsedWkt ? parsedWkt.centroid : lookupCachedCoordinates(placeLabel);
+    const cachedCoords = parsedWkt ? parsedWkt.centroid :
+      lookupCachedCoordinates(placeLabel) || (fallbackPlaceLabel && lookupCachedCoordinates(fallbackPlaceLabel));
     const { display, sortTs } = parseTimespan(timespan);
 
     if (!parsedWkt && precisionNote) {
@@ -239,7 +242,8 @@ export function extractLinkedArtTrail(doc) {
       sortTimestamp: sortTs === Number.MAX_SAFE_INTEGER ? defaultOrder : sortTs,
       placeLabel,
       placeUri,
-      coordinates: cachedCoords, // May be null until async geocoding completes
+      coordinates: cachedCoords || null, // May be null until async geocoding completes
+      fallbackPlaceLabel,
       polygon: parsedWkt?.polygon,
       isApproximate: !parsedWkt,
       actors,
@@ -370,6 +374,9 @@ export function extractLinkedArtTrail(doc) {
       : '';
 
     if (locInfo) {
+      const ownerFallback = !locInfo.wkt && (locInfo.isStorage || locInfo.isGallery) && ownerLabel
+        ? ownerLabel
+        : undefined;
       const displayPlace =
         !locInfo.wkt && locInfo.isStorage && ownerLabel
           ? `${locInfo.label} — ${ownerLabel}`
@@ -389,8 +396,9 @@ export function extractLinkedArtTrail(doc) {
         description: getDescription(doc.current_location),
         images: [...locInfo.images, ...objectImages],
         defaultOrder: 999999,
+        fallbackPlaceLabel: ownerFallback,
         precisionNote: !locInfo.wkt
-          ? `Current location "${displayPlace}" has no WKT defined_by; resolved via institution/place name.`
+          ? `Current location "${displayPlace}" has no WKT defined_by; ${ownerFallback ? `the owner "${ownerFallback}" may be used as an approximate location` : 'resolved via place name'}.`
           : undefined,
       });
     }
@@ -425,7 +433,8 @@ export async function enrichTrailWithGeocoding(trail) {
       if (Array.isArray(ev.coordinates) && ev.coordinates.length === 2) {
         return ev;
       }
-      const coords = await geocodePlaceName(ev.placeLabel);
+      const coords = await geocodePlaceName(ev.placeLabel) ||
+        (ev.fallbackPlaceLabel && await geocodePlaceName(ev.fallbackPlaceLabel));
       if (coords) {
         updated = true;
         return { ...ev, coordinates: coords };
