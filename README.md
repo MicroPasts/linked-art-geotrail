@@ -6,11 +6,27 @@ An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+j
 
 * **Event-to-place arcs:** Extracts spatial events from production, discovery, provenance, exhibitions, and current-location fields, then plots and animates quadratic Bezier trajectories.
 * **Manual playback:** Starts at the origin and advances through **Play**, timeline scrubbing, or event selection.
+  During playback, each solid trail draws to the next mapped stop before its
+  marker, label, polygon, and popup appear. Dashed arcs preview the route.
+  Pausing preserves the current progress; selecting an event reveals it
+  immediately, and resetting returns to the origin. If intermediate events
+  have no coordinates, the trail to the next mapped stop draws during the
+  final leg before that stop.
+* **Map legend and shared places:** A collapsible floating legend explains the
+  map colours. When two or more revealed events have identical coordinates,
+  their shared point pulses; it uses a static halo when reduced motion is
+  preferred.
+* **Recenter map:** Return to the most recently revealed mapped stop without
+  changing the zoom. The control is disabled until a mapped stop is available.
 * **WKT and text-place resolution:** Supports `POINT`, `POLYGON`, and `MULTIPOLYGON`; text places can use the built-in gazetteer or a cached Nominatim fallback.
 * **Attached imagery:** Finds representations and digital images, optimizes IIIF Image API URLs, compresses CORS-accessible images, and provides a full-resolution lightbox.
 * **URL and JSON-LD loading:** Accepts raw Linked Art JSON-LD or an `http(s)://` record URL.
 * **Embeddable props:** Passes a record directly and can hide the loader with `allowInput={false}`.
 * **Dark and light themes:** Switches the interface and MapLibre basemap between dark-matter and positron.
+* **Basemap selector:** Choose CARTO Positron, Dark Matter, or Voyager,
+  MIERUNE Mono, or OpenFreeMap Fiord or Liberty without an API key, or follow
+  the interface theme. Map attribution remains visible; providers' service
+  availability and usage terms apply.
 
 ## Project Structure
 
@@ -63,6 +79,15 @@ npm run dev
 ```
 
 Open the address printed by Vite (normally `http://localhost:5173`).
+
+In the interactive examples, select **Load URL / JSON**, paste a public
+HTTP(S) Linked Art URL or a JSON-LD document, and select **Fetch / Parse &
+Plot Events**. The loader requires a JSON object with non-empty `id` and `type`
+fields; it does not perform full Linked Art schema validation. If direct
+loading fails, it sends the URL to the public `corsproxy.io` and
+`api.allorigins.win` proxies in sequence. Do not use private URLs, credentials,
+or tokens in URLs. Record content is displayed as text, and image and place
+links are limited to HTTP(S).
 
 ### Tests
 
@@ -265,7 +290,8 @@ normal CSS properties; CSS variables can also be supplied with keys such as
 The keys supported by both `classNames` and `styles` are `root`, `sidebar`,
 `sidebarHeader`, `themeButton`, `loadButton`, `loadForm`, `loadInput`,
 `controls`, `playButton`, `resetButton`, `timeline`, `eventList`, `eventCard`,
-`eventBadge`, `warnings`, `lightbox`, `mapContainer`, `map`, and `popup`.
+`eventBadge`, `warnings`, `lightbox`, `mapContainer`, `map`, `popup`,
+`recenterButton`, `basemapSelect`, `legend`, `legendButton`, and `legendContent`.
 Their stable CSS hooks use the same key prefixed with `geotrail-`, for example
 `.geotrail-eventCard`. The `popup` hook applies to the popup's inner content;
 MapLibre's outer popup controls can be targeted with descendant selectors
@@ -274,11 +300,18 @@ such as `.museum-trail .maplibregl-popup-close-button`.
 `mapStyles` accepts a MapLibre style URL or style specification for either
 theme; omitted entries use the built-in basemaps. Custom styles must provide
 the glyphs required to render the map labels. Keep style objects stable between
-React renders to avoid unnecessary map reloads. `mapAppearance` accepts
+React renders to avoid unnecessary map reloads. The selector defaults to
+**Follow theme**, which uses these custom styles when provided; selecting a
+basemap overrides the theme's map until **Follow theme** is selected
+again. The interface theme remains independent of an explicitly chosen map.
+MIERUNE Mono uses raster tiles from MIERUNE and map-label fonts from
+OpenFreeMap; Fiord and Liberty use OpenFreeMap's vector tiles and fonts.
+`mapAppearance` accepts
 `ghostColor`, `transitColor`, `polygonFillColor`, `polygonOutlineColor`, and
 `categoryColors` (`production`, `discovery`, `provenance`, `exhibition`,
 `current_location`, or `other`). Missing colors retain the defaults. Map colors
-must be valid MapLibre color values, not CSS variables.
+must be valid MapLibre color values, not CSS variables. The floating legend
+reflects the supplied map colours.
 
 ## How Linked Art Records Are Extracted
 

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { getLightweightImageUrl } from '../lib/imageOptimizer';
 import { componentStyle } from '../lib/componentStyles';
+import { safeHttpUrl } from '../lib/safeUrl';
 
 const BADGE_STYLES = {
   dark: {
@@ -158,6 +159,7 @@ export const EventSidebar = React.memo(function EventSidebar({
           >
             <textarea
               {...componentStyle('loadInput', classNames, styles)}
+              aria-label="Linked Art URL or JSON-LD"
               value={rawInput}
               onChange={(e) => setRawInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -169,6 +171,9 @@ export const EventSidebar = React.memo(function EventSidebar({
                   : 'bg-slate-950 border-slate-700 text-slate-200'
               }`}
             />
+            <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+              If direct loading fails, the URL is sent to public CORS proxies. Do not enter private URLs or tokens.
+            </p>
             <button
               type="submit"
               disabled={isLoading}
@@ -305,9 +310,9 @@ export const EventSidebar = React.memo(function EventSidebar({
                   }`}
                 />
                 <span className="truncate">{ev.placeLabel}</span>
-                {ev.placeUri && (
+                {safeHttpUrl(ev.placeUri) && (
                   <a
-                    href={ev.placeUri}
+                    href={safeHttpUrl(ev.placeUri)}
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}

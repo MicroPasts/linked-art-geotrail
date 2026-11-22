@@ -6,9 +6,9 @@ export const EXAMPLE_PRESETS = [
 {
     id: 'piebald',
     title: 'Piebald Example',
-    description: 'Interactive mode with Piebald record.',
+    description: 'Explore the Piebald record or load your own Linked Art URL or JSON.',
     record: SAMPLE_PIEBALD_RECORD,
-    allowInput: false,
+    allowInput: true,
     theme: 'dark',
   },
   {
@@ -16,7 +16,7 @@ export const EXAMPLE_PRESETS = [
     title: 'Roman Imperial Medallion (WKT + Polygons)',
     description: 'Interactive mode with URL/JSON input enabled, WKT point & polygon findspot, and dark theme.',
     record: SAMPLE_LINKED_ART_RECORD,
-    allowInput: false,
+    allowInput: true,
     theme: 'dark',
   },
   {

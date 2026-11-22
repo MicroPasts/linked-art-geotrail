@@ -1,5 +1,6 @@
 import { parseWKT } from './wktParser';
 import { geocodePlaceName, lookupCachedCoordinates } from './placeResolver';
+import { safeHttpUrl } from './safeUrl';
 
 function getLabel(entity, fallback = 'Untitled') {
   if (!entity) return fallback;
@@ -111,7 +112,7 @@ function parseTimespan(timespan) {
 }
 
 function isImageUrl(url) {
-  if (typeof url !== 'string') return false;
+  if (!safeHttpUrl(url)) return false;
   if (/rightsstatements\.org\/files\/icons/i.test(url)) return false;
   return /\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(url) || /\/iiif\/image\//i.test(url);
 }

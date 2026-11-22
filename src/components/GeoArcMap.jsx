@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { LocateFixed } from 'lucide-react';
 import { Map, NavigationControl, Popup, setWorkerUrl } from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { buildBezierArc, sliceArcAtProgress } from '../lib/arcGeometry';
 import { getLightweightImageUrl } from '../lib/imageOptimizer';
 import { componentStyle } from '../lib/componentStyles';
+import { safeHttpUrl } from '../lib/safeUrl';
 
 const CATEGORY_COLORS = {
   production: '#d97706',
@@ -14,17 +16,55 @@ const CATEGORY_COLORS = {
   other: '#64748b',
 };
 
+const CATEGORY_LABELS = {
+  production: 'Production',
+  discovery: 'Discovery',
+  provenance: 'Provenance',
+  exhibition: 'Exhibition',
+  current_location: 'Current location',
+  other: 'Other',
+};
+
+function categoryColor(category, overrides) {
+  return overrides?.[category] ?? CATEGORY_COLORS[category] ?? overrides?.other ?? CATEGORY_COLORS.other;
+}
+
 const MAP_STYLES = {
   dark: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
   light: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
 };
 
+const OPENFREEMAP_GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+const MIERUNE_MONO = {
+  version: 8,
+  glyphs: OPENFREEMAP_GLYPHS,
+  sources: {
+    mierune: {
+      type: 'raster',
+      tiles: ['https://tile.mierune.co.jp/mierune_mono/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: 'Map tiles &copy; <a href="https://mierune.co.jp/">MIERUNE</a> (CC BY); data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    },
+  },
+  layers: [{ id: 'mierune-mono', type: 'raster', source: 'mierune' }],
+};
+
+const BASEMAPS = {
+  positron: { label: 'CARTO Positron', style: MAP_STYLES.light, isLight: true },
+  dark: { label: 'CARTO Dark Matter', style: MAP_STYLES.dark, isLight: false },
+  voyager: { label: 'CARTO Voyager', style: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json', isLight: true },
+  mierune: { label: 'MIERUNE Mono', style: MIERUNE_MONO, isLight: true, font: ['Noto Sans Bold'] },
+  fiord: { label: 'OpenFreeMap Fiord', style: 'https://tiles.openfreemap.org/styles/fiord', isLight: false, font: ['Noto Sans Bold'] },
+  liberty: { label: 'OpenFreeMap Liberty', style: 'https://tiles.openfreemap.org/styles/liberty', isLight: true, font: ['Noto Sans Bold'] },
+};
+
 const DEFAULT_ZOOM = 6;
 const EMPTY_APPEARANCE = {};
+const DEFAULT_FONT = ['Open Sans Bold', 'Arial Unicode MS Bold'];
 
 setWorkerUrl(maplibreWorkerUrl);
 
-function ensureGeoTrailLayers(map, isLight) {
+function ensureGeoTrailLayers(map, isLight, font) {
   if (!map.getSource('place-polygons')) {
     map.addSource('place-polygons', {
       type: 'geojson',
@@ -104,6 +144,21 @@ function ensureGeoTrailLayers(map, isLight) {
       data: { type: 'FeatureCollection', features: [] },
     });
   }
+  if (!map.getLayer('event-nodes-pulse')) {
+    map.addLayer({
+      id: 'event-nodes-pulse',
+      type: 'circle',
+      source: 'event-nodes',
+      filter: ['==', ['get', 'pulseOwner'], true],
+      paint: {
+        'circle-radius': 19,
+        'circle-radius-transition': { duration: 0 },
+        'circle-color': ['get', 'color'],
+        'circle-opacity': 0.45,
+        'circle-opacity-transition': { duration: 0 },
+      },
+    });
+  }
   if (!map.getLayer('event-nodes-circle')) {
     map.addLayer({
       id: 'event-nodes-circle',
@@ -132,7 +187,7 @@ function ensureGeoTrailLayers(map, isLight) {
         'text-size': 12,
         'text-offset': [0, 1.35],
         'text-anchor': 'top',
-        'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+        'text-font': font,
       },
       paint: {
         'text-color': isLight ? '#0f172a' : '#f8fafc',
@@ -190,14 +245,22 @@ export function GeoArcMapComponent({
   const lastCenteredKeyRef = useRef(null);
   const currentStyleUrlRef = useRef(null);
   const currentStyleThemeRef = useRef(null);
+  const currentMapLightRef = useRef(false);
+  const currentMapFontRef = useRef(DEFAULT_FONT);
   const isStyleReadyRef = useRef(false);
   const isReplacingPopupRef = useRef(false);
   const [styleReady, setStyleReady] = useState(0);
   const [popupDismissed, setPopupDismissed] = useState(false);
   const [popupRequest, setPopupRequest] = useState(0);
+  const [legendOpen, setLegendOpen] = useState(true);
+  const [basemap, setBasemap] = useState('auto');
+  const legendId = useId();
 
   const isLight = theme === 'light';
-  const targetStyleUrl = mapStyles?.[theme] ?? MAP_STYLES[isLight ? 'light' : 'dark'];
+  const selectedBasemap = BASEMAPS[basemap];
+  const targetStyleUrl = selectedBasemap?.style ?? mapStyles?.[theme] ?? MAP_STYLES[isLight ? 'light' : 'dark'];
+  const isLightMap = selectedBasemap?.isLight ?? isLight;
+  const mapFont = selectedBasemap?.font ?? DEFAULT_FONT;
   const categoryColors = mapAppearance.categoryColors;
 
   const plottableEvents = useMemo(
@@ -225,25 +288,41 @@ export function GeoArcMapComponent({
     return arcs;
   }, [plottableEvents]);
 
-  // While animating from leg index `i` (0..N-2) toward `i+1`, the moving target is `plottableEvents[i + 1]`;
-  // otherwise the focused stop is `plottableEvents[activeLegIndex]`.
-  const targetEvent = useMemo(() => {
-    if (plottableEvents.length === 0) return null;
-    if (isPlaying && activeLegIndex < plottableEvents.length - 1) {
-      return plottableEvents[activeLegIndex + 1];
+  const activePlotIdx = useMemo(() => {
+    let index = -1;
+    for (let i = 0; i < plottableEvents.length; i++) {
+      if (plottableEvents[i].index <= activeLegIndex) index = i;
     }
-    const selectedOrig = events?.[Math.min(activeLegIndex, (events?.length || 1) - 1)];
-    return (
-      plottableEvents.find((ev) => ev.index === selectedOrig?.index) ||
-      plottableEvents[Math.min(activeLegIndex, plottableEvents.length - 1)]
-    );
-  }, [events, plottableEvents, activeLegIndex, isPlaying]);
+    return index;
+  }, [plottableEvents, activeLegIndex]);
+  const visibleNodes = useMemo(() => {
+    const visible = plottableEvents.slice(0, activePlotIdx + 1);
+    const groups = new globalThis.Map();
+    visible.forEach((event, index) => {
+      const key = event.coordinates.join(',');
+      const group = groups.get(key) ?? { count: 0, lastIndex: index };
+      group.count += 1;
+      group.lastIndex = index;
+      groups.set(key, group);
+    });
+    return visible.map((event, index) => {
+      const group = groups.get(event.coordinates.join(','));
+      return { event, index, pulseOwner: group.count > 1 && group.lastIndex === index };
+    });
+  }, [plottableEvents, activePlotIdx]);
+  const hasSharedPlace = visibleNodes.some((node) => node.pulseOwner);
+  const currentEvent = plottableEvents[activePlotIdx] ?? null;
+  const nextEvent = plottableEvents[activePlotIdx + 1];
+  const isDrawingLeg = activePlotIdx >= 0 && nextEvent?.index === activeLegIndex + 1;
+  const cameraEvent = isPlaying && isDrawingLeg ? nextEvent : currentEvent;
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     currentStyleUrlRef.current = targetStyleUrl;
     currentStyleThemeRef.current = theme;
+    currentMapLightRef.current = isLightMap;
+    currentMapFontRef.current = mapFont;
 
     const map = new Map({
       container: containerRef.current,
@@ -251,13 +330,13 @@ export function GeoArcMapComponent({
       center: plottableEvents[0]?.coordinates || [5, 46],
       zoom: DEFAULT_ZOOM,
       pitch: 24,
-      attributionControl: false,
+      attributionControl: true,
     });
 
     map.addControl(new NavigationControl({ showCompass: true }), 'top-right');
 
     const handleReady = () => {
-      ensureGeoTrailLayers(map, currentStyleThemeRef.current === 'light');
+      ensureGeoTrailLayers(map, currentMapLightRef.current, currentMapFontRef.current);
       isStyleReadyRef.current = true;
       setStyleReady((n) => n + 1);
     };
@@ -293,7 +372,7 @@ export function GeoArcMapComponent({
       isStyleReadyRef.current = false;
     };
     const handleContextRestored = () => {
-      ensureGeoTrailLayers(map, currentStyleThemeRef.current === 'light');
+      ensureGeoTrailLayers(map, currentMapLightRef.current, currentMapFontRef.current);
       isStyleReadyRef.current = true;
       setStyleReady((n) => n + 1);
     };
@@ -329,10 +408,12 @@ export function GeoArcMapComponent({
 
     currentStyleUrlRef.current = targetStyleUrl;
     currentStyleThemeRef.current = theme;
+    currentMapLightRef.current = isLightMap;
+    currentMapFontRef.current = mapFont;
     isStyleReadyRef.current = false;
     // Style diffing removes custom layers without emitting style.load.
     map.setStyle(targetStyleUrl, { diff: false });
-  }, [targetStyleUrl, theme, styleReady]);
+  }, [targetStyleUrl, theme, isLightMap, mapFont, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -340,7 +421,7 @@ export function GeoArcMapComponent({
         currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
 
     const paint = [
-      ['ghost-arcs-layer', 'line-color', mapAppearance.ghostColor ?? (isLight ? '#94a3b8' : '#475569')],
+      ['ghost-arcs-layer', 'line-color', mapAppearance.ghostColor ?? (isLightMap ? '#94a3b8' : '#475569')],
       ['active-trail-glow', 'line-color', mapAppearance.transitColor ?? '#0284c7'],
       ['transit-head-halo', 'circle-color', mapAppearance.transitColor ?? '#0284c7'],
       ['transit-head-core', 'circle-stroke-color', mapAppearance.transitColor ?? '#0284c7'],
@@ -348,14 +429,14 @@ export function GeoArcMapComponent({
       ['place-polygons-outline', 'line-color', mapAppearance.polygonOutlineColor ?? '#059669'],
     ];
     paint.forEach(([layer, property, value]) => map.setPaintProperty(layer, property, value));
-  }, [mapAppearance, isLight, targetStyleUrl, theme, styleReady]);
+  }, [mapAppearance, isLightMap, targetStyleUrl, theme, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
         currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
 
-    ensureGeoTrailLayers(map, isLight);
+    ensureGeoTrailLayers(map, isLightMap, mapFont);
     const ghostSource = map.getSource('ghost-arcs');
     const polySource = map.getSource('place-polygons');
     if (!ghostSource || !polySource) return;
@@ -372,7 +453,7 @@ export function GeoArcMapComponent({
     polySource.setData({
       type: 'FeatureCollection',
       features: plottableEvents
-        .filter((ev) => ev.polygon && ev.polygon.length > 0)
+        .filter((ev) => ev.index <= activeLegIndex && ev.polygon && ev.polygon.length > 0)
         .map((ev) => ({
           type: 'Feature',
           properties: { title: ev.placeLabel },
@@ -380,21 +461,15 @@ export function GeoArcMapComponent({
         })),
     });
 
-    if (plottableEvents.length > 0 && !hasCenteredStepRef.current) {
-      map.jumpTo({
-        center: plottableEvents[0].coordinates,
-        zoom: DEFAULT_ZOOM,
-      });
-    }
-  }, [plottableEvents, legArcs, isLight, targetStyleUrl, theme, styleReady]);
+  }, [plottableEvents, legArcs, activeLegIndex, isLightMap, mapFont, targetStyleUrl, theme, styleReady]);
 
   // Center camera smoothly on target stop whenever the target changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || !targetEvent) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || !cameraEvent) return;
 
-    const focusKey = `${targetEvent.id ?? targetEvent.index}:${targetEvent.coordinates.join(',')}:${isPlaying ? 'play' : 'idle'}`;
+    const focusKey = `${cameraEvent.id ?? cameraEvent.index}:${cameraEvent.coordinates.join(',')}:${isPlaying ? 'play' : 'idle'}`;
     if (lastCenteredKeyRef.current === focusKey) return;
 
     const isInitialOrigin = activeLegIndex === 0 && !isPlaying && !hasCenteredStepRef.current;
@@ -402,26 +477,26 @@ export function GeoArcMapComponent({
 
     if (isInitialOrigin) {
       map.jumpTo({
-        center: targetEvent.coordinates,
+        center: cameraEvent.coordinates,
         zoom: DEFAULT_ZOOM,
       });
     } else {
       hasCenteredStepRef.current = true;
       map.easeTo({
-        center: targetEvent.coordinates,
+        center: cameraEvent.coordinates,
         zoom: DEFAULT_ZOOM,
         duration: 1200,
         essential: true,
       });
     }
-  }, [activeLegIndex, isPlaying, targetEvent, targetStyleUrl, theme, styleReady]);
+  }, [activeLegIndex, isPlaying, cameraEvent, targetStyleUrl, theme, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || !targetEvent) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
 
-    if (popupDismissed) {
+    if (popupDismissed || !currentEvent) {
       isReplacingPopupRef.current = true;
       popupRef.current?.remove();
       popupRef.current = null;
@@ -433,41 +508,41 @@ export function GeoArcMapComponent({
     popupRef.current?.remove();
     isReplacingPopupRef.current = false;
 
-    const rawImg = targetEvent.images?.[0];
-    const lightUrl = rawImg ? getLightweightImageUrl(rawImg.url, { maxWidth: 420 }) : '';
-    const safeLabel = String(rawImg?.label || targetEvent.title).replace(/"/g, '&quot;');
+    const rawImg = currentEvent.images?.[0];
+    const imageUrl = safeHttpUrl(rawImg?.url);
+    const popupBody = document.createElement('div');
+    popupBody.className = `geotrail-popup w-[264px] max-w-full overflow-hidden ${
+      isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-slate-100'
+    }`;
+    if (imageUrl) {
+      const wrapper = document.createElement('div');
+      wrapper.className = `w-full h-32 overflow-hidden rounded-t-xl border-b ${
+        isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-950 border-slate-800'
+      }`;
+      const image = document.createElement('img');
+      image.dataset.popupImg = '';
+      image.src = getLightweightImageUrl(imageUrl, { maxWidth: 420 });
+      image.alt = rawImg.label || currentEvent.title;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.className = 'w-full h-full object-cover block';
+      wrapper.appendChild(image);
+      popupBody.appendChild(wrapper);
+    }
 
-    const imgHtml = lightUrl
-      ? `<div class="w-full h-32 overflow-hidden ${
-          isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-950 border-slate-800'
-        } rounded-t-xl border-b">
-           <img
-             data-popup-img
-             src="${lightUrl}"
-             alt="${safeLabel}"
-             loading="lazy"
-             decoding="async"
-             class="w-full h-full object-cover block"
-           />
-         </div>`
-      : '';
-
-    const html = `
-      <div class="geotrail-popup w-[264px] max-w-full overflow-hidden ${
-        isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-slate-100'
-      }">
-        ${imgHtml}
-        <div class="p-3">
-          <div class="text-[11px] font-semibold uppercase tracking-wider ${
-            isLight ? 'text-sky-700' : 'text-sky-400'
-          }">${targetEvent.dateDisplay}</div>
-          <div class="text-sm font-semibold mt-0.5 line-clamp-2">${targetEvent.title}</div>
-          <div class="text-xs ${
-            isLight ? 'text-slate-600' : 'text-slate-400'
-          } mt-0.5 truncate">${targetEvent.placeLabel}</div>
-        </div>
-      </div>
-    `;
+    const details = document.createElement('div');
+    details.className = 'p-3';
+    const date = document.createElement('div');
+    date.className = `text-[11px] font-semibold uppercase tracking-wider ${isLight ? 'text-sky-700' : 'text-sky-400'}`;
+    date.textContent = currentEvent.dateDisplay;
+    const title = document.createElement('div');
+    title.className = 'text-sm font-semibold mt-0.5 line-clamp-2';
+    title.textContent = currentEvent.title;
+    const place = document.createElement('div');
+    place.className = `text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'} mt-0.5 truncate`;
+    place.textContent = currentEvent.placeLabel;
+    details.append(date, title, place);
+    popupBody.appendChild(details);
 
     const popup = new Popup({
       offset: 14,
@@ -475,8 +550,8 @@ export function GeoArcMapComponent({
       closeButton: true,
       closeOnClick: false,
     })
-      .setLngLat(targetEvent.coordinates)
-      .setHTML(html)
+      .setLngLat(currentEvent.coordinates)
+      .setDOMContent(popupBody)
       .addTo(map);
 
     popup.on('close', () => {
@@ -486,7 +561,6 @@ export function GeoArcMapComponent({
     });
 
     const popupEl = popup.getElement();
-    const popupBody = popupEl?.querySelector('.geotrail-popup');
     if (popupBody) {
       if (classNames?.popup) {
         popupBody.classList.add(...classNames.popup.split(/\s+/).filter(Boolean));
@@ -499,44 +573,86 @@ export function GeoArcMapComponent({
       }
     }
     const popupImg = popupEl?.querySelector('img[data-popup-img]');
-    if (popupImg && rawImg?.url) {
+    if (popupImg && imageUrl) {
       popupImg.addEventListener('error', () => {
-        if (popupImg.src !== rawImg.url) {
-          popupImg.src = rawImg.url;
+        if (popupImg.src !== imageUrl) {
+          popupImg.src = imageUrl;
         }
       });
     }
 
     popupRef.current = popup;
-  }, [targetEvent, isLight, targetStyleUrl, theme, styleReady, popupDismissed, popupRequest, classNames?.popup, styles?.popup]);
+  }, [currentEvent, isLight, targetStyleUrl, theme, styleReady, popupDismissed, popupRequest, classNames?.popup, styles?.popup]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || plottableEvents.length === 0) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
 
-    ensureGeoTrailLayers(map, isLight);
-    const trailSource = map.getSource('active-trail');
-    const headSource = map.getSource('transit-head');
+    ensureGeoTrailLayers(map, isLightMap, mapFont);
     const nodesSource = map.getSource('event-nodes');
-    if (!trailSource || !headSource || !nodesSource) return;
-
-    const activePlotIdx = Math.min(activeLegIndex, plottableEvents.length - 1);
+    if (!nodesSource) return;
 
     nodesSource.setData({
       type: 'FeatureCollection',
-      features: plottableEvents.map((ev, plotIdx) => ({
+      features: visibleNodes.map(({ event: ev, index: plotIdx, pulseOwner }) => ({
         type: 'Feature',
         properties: {
           index: plotIdx,
           origIndex: ev.index,
           placeLabel: ev.placeLabel,
-          color: categoryColors?.[ev.category] ?? CATEGORY_COLORS[ev.category] ?? categoryColors?.other ?? CATEGORY_COLORS.other,
+          color: categoryColor(ev.category, categoryColors),
           isActive: plotIdx === activePlotIdx,
+          pulseOwner,
         },
         geometry: { type: 'Point', coordinates: ev.coordinates },
       })),
     });
+  }, [activePlotIdx, visibleNodes, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !hasSharedPlace || styleReady === 0 || !isStyleReadyRef.current ||
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
+
+    const motion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    let frameId;
+    let lastUpdate = 0;
+    const setPulse = (radius, opacity) => {
+      if (!isStyleReadyRef.current || !map.getLayer('event-nodes-pulse')) return;
+      map.setPaintProperty('event-nodes-pulse', 'circle-radius', radius);
+      map.setPaintProperty('event-nodes-pulse', 'circle-opacity', opacity);
+    };
+    const animate = (time) => {
+      if (time - lastUpdate >= 33) {
+        const progress = (time % 1600) / 1600;
+        setPulse(16 + progress * 20, 0.7 * (1 - progress));
+        lastUpdate = time;
+      }
+      frameId = requestAnimationFrame(animate);
+    };
+    const updateMotion = () => {
+      cancelAnimationFrame(frameId);
+      if (motion?.matches) setPulse(19, 0.45);
+      else frameId = requestAnimationFrame(animate);
+    };
+    updateMotion();
+    motion?.addEventListener('change', updateMotion);
+    return () => {
+      cancelAnimationFrame(frameId);
+      motion?.removeEventListener('change', updateMotion);
+    };
+  }, [hasSharedPlace, targetStyleUrl, theme, styleReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || styleReady === 0 || !isStyleReadyRef.current ||
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
+
+    ensureGeoTrailLayers(map, isLightMap, mapFont);
+    const trailSource = map.getSource('active-trail');
+    const headSource = map.getSource('transit-head');
+    if (!trailSource || !headSource) return;
 
     const trailFeatures = [];
 
@@ -544,22 +660,22 @@ export function GeoArcMapComponent({
     for (let i = 0; i < activePlotIdx && i < legArcs.length; i++) {
       trailFeatures.push({
         type: 'Feature',
-        properties: { color: categoryColors?.[legArcs[i].to.category] ?? CATEGORY_COLORS[legArcs[i].to.category] ?? categoryColors?.other ?? CATEGORY_COLORS.other },
+        properties: { color: categoryColor(legArcs[i].to.category, categoryColors) },
         geometry: { type: 'LineString', coordinates: legArcs[i].coords },
       });
     }
 
-    let headCoord = plottableEvents[activePlotIdx].coordinates;
+    let headCoord = currentEvent?.coordinates;
 
     // Draw the currently advancing arc from `activePlotIdx` -> `activePlotIdx + 1`
-    if (activePlotIdx < legArcs.length && (isPlaying || legProgress > 0)) {
+    if (isDrawingLeg && (isPlaying || legProgress > 0)) {
       const currentLeg = legArcs[activePlotIdx];
       const { trail, head } = sliceArcAtProgress(currentLeg.coords, legProgress);
       headCoord = head;
       if (trail.length >= 2) {
         trailFeatures.push({
           type: 'Feature',
-          properties: { color: categoryColors?.[currentLeg.to.category] ?? CATEGORY_COLORS[currentLeg.to.category] ?? categoryColors?.other ?? CATEGORY_COLORS.other },
+          properties: { color: categoryColor(currentLeg.to.category, categoryColors) },
           geometry: { type: 'LineString', coordinates: trail },
         });
       }
@@ -568,22 +684,99 @@ export function GeoArcMapComponent({
     trailSource.setData({ type: 'FeatureCollection', features: trailFeatures });
     headSource.setData({
       type: 'FeatureCollection',
-      features: [
+      features: headCoord ? [
         {
           type: 'Feature',
           properties: {},
           geometry: { type: 'Point', coordinates: headCoord },
         },
-      ],
+      ] : [],
     });
-  }, [activeLegIndex, legProgress, isPlaying, plottableEvents, legArcs, isLight, targetStyleUrl, theme, styleReady, categoryColors]);
+  }, [activePlotIdx, currentEvent, isDrawingLeg, legProgress, isPlaying, plottableEvents, legArcs, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
 
   return (
-    <div
-      ref={containerRef}
-      {...componentStyle('map', classNames, styles)}
-      className={`${componentStyle('map', classNames, styles).className} w-full h-full`}
-    />
+    <div className="relative w-full h-full">
+      <div
+        ref={containerRef}
+        {...componentStyle('map', classNames, styles)}
+        className={`${componentStyle('map', classNames, styles).className} w-full h-full`}
+      />
+      <label className={`absolute top-3 left-3 z-10 flex items-center gap-2 rounded-lg border px-2 py-1.5 shadow-lg text-xs ${
+        isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-slate-900 text-slate-100 border-slate-700'
+      }`}>
+        <span>Map style</span>
+        <select
+          {...componentStyle('basemapSelect', classNames, styles)}
+          className={`${componentStyle('basemapSelect', classNames, styles).className} max-w-[10rem] bg-transparent font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500`}
+          value={basemap}
+          onChange={(event) => setBasemap(event.target.value)}
+        >
+          <option value="auto" className="text-slate-900">Follow theme</option>
+          {Object.entries(BASEMAPS).map(([key, option]) => (
+            <option key={key} value={key} className="text-slate-900">{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        {...componentStyle('recenterButton', classNames, styles)}
+        className={`${componentStyle('recenterButton', classNames, styles).className} absolute top-28 right-2.5 z-10 flex h-8 w-8 items-center justify-center rounded border shadow-md disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500 ${
+          isLight ? 'bg-white text-slate-900 border-slate-300 hover:bg-slate-100' : 'bg-slate-900 text-slate-100 border-slate-700 hover:bg-slate-800'
+        }`}
+        aria-label="Recenter map on current stop"
+        title="Recenter map on current stop"
+        disabled={!currentEvent || styleReady === 0}
+        onClick={() => mapRef.current?.easeTo({ center: currentEvent.coordinates, duration: 800 })}
+      >
+        <LocateFixed size={18} aria-hidden="true" />
+      </button>
+      <aside
+        {...componentStyle('legend', classNames, styles)}
+        aria-label="Map legend"
+        className={`${componentStyle('legend', classNames, styles).className} absolute bottom-3 left-3 z-10 rounded-lg border shadow-lg text-xs ${
+          isLight ? 'bg-white text-slate-900 border-slate-300' : 'bg-slate-900 text-slate-100 border-slate-700'
+        }`}
+      >
+        <button
+          type="button"
+          {...componentStyle('legendButton', classNames, styles)}
+          className={`${componentStyle('legendButton', classNames, styles).className} flex items-center justify-between gap-4 w-full px-3 py-2 font-semibold`}
+          aria-expanded={legendOpen}
+          aria-controls={legendId}
+          onClick={() => setLegendOpen((open) => !open)}
+        >
+          <span>Map legend</span>
+          <span aria-hidden="true">{legendOpen ? '−' : '+'}</span>
+        </button>
+        <div
+          id={legendId}
+          hidden={!legendOpen}
+          {...componentStyle('legendContent', classNames, styles)}
+          className={`${componentStyle('legendContent', classNames, styles).className} max-h-[35vh] overflow-y-auto`}
+        >
+          <ul className="px-3 pb-3 space-y-1.5">
+            {Object.entries(CATEGORY_LABELS).map(([category, label]) => (
+              <li key={category} className="flex items-center gap-2">
+                <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: categoryColor(category, categoryColors) }} />
+                {label}
+              </li>
+            ))}
+            <li className="flex items-center gap-2">
+              <span aria-hidden="true" className="w-2.5 border-t-2 border-dashed" style={{ borderColor: mapAppearance.ghostColor ?? (isLightMap ? '#94a3b8' : '#475569') }} />
+              Route preview
+            </li>
+            <li className="flex items-center gap-2">
+              <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full border-2" style={{ borderColor: mapAppearance.transitColor ?? '#0284c7' }} />
+              Moving position
+            </li>
+            <li className="flex items-center gap-2">
+              <span aria-hidden="true" className="w-2.5 h-2.5 border" style={{ backgroundColor: mapAppearance.polygonFillColor ?? '#10b981', borderColor: mapAppearance.polygonOutlineColor ?? '#059669' }} />
+              Place area
+            </li>
+          </ul>
+        </div>
+      </aside>
+    </div>
   );
 }
 

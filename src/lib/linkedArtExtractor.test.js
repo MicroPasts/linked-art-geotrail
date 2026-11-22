@@ -41,4 +41,13 @@ describe('extractLinkedArtTrail', () => {
     const trail = extractLinkedArtTrail({ produced_by: { took_place_at: place('Rome', '12 41') } });
     await expect(enrichTrailWithGeocoding(trail)).resolves.toBe(trail);
   });
+
+  it('does not extract unsafe image URLs', () => {
+    const trail = extractLinkedArtTrail({
+      representation: [{ id: 'javascript:alert(1)//.jpg' }],
+      produced_by: { took_place_at: place('Rome', '12 41') },
+    });
+    expect(trail.heroImage).toBeUndefined();
+    expect(trail.events[0].images).toEqual([]);
+  });
 });

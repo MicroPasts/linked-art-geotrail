@@ -99,6 +99,7 @@ export function App({
 
   const handleLoadInput = useCallback(async (raw) => {
     setIsLoading(true);
+    setParseError(null);
     try {
       const doc = await loadLinkedArtInput(raw);
       const nextTrail = extractLinkedArtTrail(doc);
@@ -172,7 +173,7 @@ export function App({
         className={`${componentStyle('mapContainer', classNames, styles).className} relative flex-1 h-[52vh] lg:h-full`}
       >
         {parseError && (
-          <div className="absolute top-3 left-3 z-20 max-w-md bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs px-3 py-2 rounded-lg">
+          <div role="alert" className="absolute top-3 left-3 z-20 max-w-md bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs px-3 py-2 rounded-lg">
             Load Error: {parseError}
           </div>
         )}

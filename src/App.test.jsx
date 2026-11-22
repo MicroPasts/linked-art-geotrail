@@ -31,6 +31,43 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('record loader', () => {
+  it('loads a URL, renders its events, and reports invalid URLs without fetching', async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'https://example.org/object',
+        type: 'HumanMadeObject',
+        _label: 'Loaded object',
+        produced_by: {
+          _label: '<img src=x onerror=alert(1)>',
+          took_place_at: { id: 'javascript:alert(1)', _label: 'Rome', defined_by: 'POINT (12 41)' },
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    const { container } = render(<App record={record} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByText('Load URL / JSON'));
+    const input = screen.getByLabelText('Linked Art URL or JSON-LD');
+    fireEvent.change(input, { target: { value: 'javascript:alert(1)' } });
+    fireEvent.click(screen.getByText('Fetch / Parse & Plot Events'));
+    await act(async () => {});
+    expect(screen.getByRole('alert').textContent).toContain('valid HTTP(S) URL');
+    expect(fetch).not.toHaveBeenCalled();
+
+    fireEvent.change(input, { target: { value: 'https://example.org/object' } });
+    fireEvent.click(screen.getByText('Fetch / Parse & Plot Events'));
+    await act(async () => {});
+    expect(screen.getByText('Loaded object')).toBeTruthy();
+    expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
+    expect(container.querySelector('img[src="x"]')).toBeNull();
+    expect(screen.queryByTitle('Open Place URI')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
 describe('playback in Strict Mode', () => {
   it('advances, pauses, resumes, ends on the last stop and restarts', async () => {
     render(<StrictMode><App record={record} /></StrictMode>);

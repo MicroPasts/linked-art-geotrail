@@ -1,3 +1,5 @@
+import { safeHttpUrl } from './safeUrl';
+
 const CORS_PROXIES = [
   (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -5,6 +7,7 @@ const CORS_PROXIES = [
 
 async function fetchJsonLdDirect(url) {
   const res = await fetch(url, {
+    credentials: 'omit',
     headers: {
       Accept: 'application/ld+json; profile="https://linked.art/ns/v1/linked-art.json", application/ld+json, application/json',
     },
@@ -19,7 +22,7 @@ async function fetchJsonLdViaProxy(url) {
   let lastError = null;
   for (const makeProxyUrl of CORS_PROXIES) {
     try {
-      const res = await fetch(makeProxyUrl(url));
+      const res = await fetch(makeProxyUrl(url), { credentials: 'omit' });
       if (!res.ok) {
         lastError = new Error(`Proxy HTTP ${res.status}`);
         continue;
@@ -41,19 +44,31 @@ export async function loadLinkedArtInput(rawInput) {
     throw new Error('Enter a Linked Art URL or paste JSON-LD.');
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
+  let doc;
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    const url = safeHttpUrl(trimmed);
+    if (!url) {
+      throw new Error('Enter a valid HTTP(S) URL without embedded credentials, or paste JSON-LD.');
+    }
     try {
-      return await fetchJsonLdDirect(trimmed);
+      doc = await fetchJsonLdDirect(url);
     } catch (directErr) {
       try {
-        return await fetchJsonLdViaProxy(trimmed);
+        doc = await fetchJsonLdViaProxy(url);
       } catch {
         throw new Error(
-          `Could not fetch "${trimmed}" (${directErr instanceof Error ? directErr.message : 'CORS or network error'}). Paste the JSON-LD directly instead.`
+          `Could not fetch "${url}" (${directErr instanceof Error ? directErr.message : 'CORS or network error'}). Paste the JSON-LD directly instead.`
         );
       }
     }
+  } else {
+    doc = JSON.parse(trimmed);
   }
 
-  return JSON.parse(trimmed);
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc) ||
+      typeof doc.id !== 'string' || !doc.id.trim() ||
+      typeof doc.type !== 'string' || !doc.type.trim()) {
+    throw new Error('Expected a Linked Art JSON object with non-empty id and type fields.');
+  }
+  return doc;
 }
