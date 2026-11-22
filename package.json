@@ -1,6 +1,6 @@
 {
   "name": "@micropasts/linked-art-geotrail",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "An interactive React component for visualizing Linked Art cultural heritage records as animated geospatial event arcs.",
   "author": "Daniel Pett",
   "license": "MIT",
