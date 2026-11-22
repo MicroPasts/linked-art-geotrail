@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import { Map, NavigationControl, Popup, setWorkerUrl } from 'maplibre-gl';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { buildBezierArc, sliceArcAtProgress } from '../lib/arcGeometry';
 import { getLightweightImageUrl } from '../lib/imageOptimizer';
 import { componentStyle } from '../lib/componentStyles';
@@ -20,6 +21,8 @@ const MAP_STYLES = {
 
 const DEFAULT_ZOOM = 6;
 const EMPTY_APPEARANCE = {};
+
+setWorkerUrl(maplibreWorkerUrl);
 
 function ensureGeoTrailLayers(map, isLight) {
   if (!map.getSource('place-polygons')) {
@@ -242,7 +245,7 @@ export function GeoArcMapComponent({
     currentStyleUrlRef.current = targetStyleUrl;
     currentStyleThemeRef.current = theme;
 
-    const map = new maplibregl.Map({
+    const map = new Map({
       container: containerRef.current,
       style: targetStyleUrl,
       center: plottableEvents[0]?.coordinates || [5, 46],
@@ -251,7 +254,7 @@ export function GeoArcMapComponent({
       attributionControl: false,
     });
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+    map.addControl(new NavigationControl({ showCompass: true }), 'top-right');
 
     const handleReady = () => {
       ensureGeoTrailLayers(map, currentStyleThemeRef.current === 'light');
@@ -466,7 +469,7 @@ export function GeoArcMapComponent({
       </div>
     `;
 
-    const popup = new maplibregl.Popup({
+    const popup = new Popup({
       offset: 14,
       maxWidth: '272px',
       closeButton: true,

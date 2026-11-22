@@ -2,6 +2,7 @@
 import React from 'react';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setWorkerUrl } from 'maplibre-gl';
 import { GeoArcMap } from './GeoArcMap';
 
 const mocks = vi.hoisted(() => ({ maps: [], popups: [] }));
@@ -54,8 +55,12 @@ vi.mock('maplibre-gl', () => {
     remove() { this.close?.(); }
     getElement() { return this.element; }
   }
-  return { default: { Map, Popup, NavigationControl: class {} } };
+  return { Map, Popup, NavigationControl: class {}, setWorkerUrl: vi.fn() };
 });
+
+vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({
+  default: '/maplibre-gl-worker.js',
+}));
 
 const events = [
   { index: 0, id: 'a', title: 'A', placeLabel: 'Rome', category: 'production', coordinates: [12, 41], images: [] },
@@ -74,6 +79,10 @@ afterEach(() => {
 });
 
 describe('map style and popup lifecycle', () => {
+  it('configures the bundled MapLibre worker', () => {
+    expect(setWorkerUrl).toHaveBeenCalledWith('/maplibre-gl-worker.js');
+  });
+
   it('restores moving and ghost trails after switching light and dark styles', () => {
     const props = { events, activeLegIndex: 0, legProgress: 0.5, isPlaying: true };
     const { rerender } = render(<GeoArcMap {...props} theme="dark" />);

@@ -1,6 +1,6 @@
 # @micropasts/linked-art-geotrail
 
-An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+json`) cultural heritage records. It uses React 18, Vite, Tailwind CSS, Lucide, and MapLibre GL, and complements [`linked-art-viewer`](https://github.com/MicroPasts/linked-art-viewer) and [`provenance-timeline`](https://github.com/MicroPasts/provenance-timeline).
+An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+json`) cultural heritage records. It uses React 18, Vite, Tailwind CSS, Lucide, and MapLibre GL JS 6.4.1, and complements [`linked-art-viewer`](https://github.com/MicroPasts/linked-art-viewer) and [`provenance-timeline`](https://github.com/MicroPasts/provenance-timeline).
 
 ## Features
 
@@ -102,7 +102,8 @@ export function MuseumObjectTrail({ record }) {
 }
 ```
 
-When developing with React 18, the package uses the same React instance supplied by the host project. The host must also provide React DOM. The component bundles Lucide and includes MapLibre styles, but it does not bundle React.
+The host must provide React and React DOM 18. The library bundles MapLibre GL JS
+and includes its styles; React, React DOM, and Lucide are external dependencies.
 
 The package also exports `App` as a named export:
 
@@ -150,7 +151,10 @@ Create a browser-ready UMD bundle:
 npm run build:umd
 ```
 
-The build writes `linked-art-geotrail.umd.js` and `linked-art-geotrail.css` to `dist-umd/`.
+The build writes `linked-art-geotrail.umd.js`, `linked-art-geotrail.css`, and
+an `assets/` directory containing the MapLibre worker to `dist-umd/`. Deploy
+the entire directory, preserving the relative paths. The worker must be served
+as JavaScript; a content security policy must allow workers from its origin.
 
 Serve or deploy that directory, then mount the viewer from a plain HTML page:
 

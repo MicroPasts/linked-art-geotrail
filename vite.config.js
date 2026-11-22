@@ -49,7 +49,7 @@ export default defineConfig(() => {
         },
         rollupOptions: isLib
           ? {
-              external: ['react', 'react-dom', 'react-dom/client', 'lucide-react', 'maplibre-gl'],
+              external: ['react', 'react-dom', 'react-dom/client', 'lucide-react'],
               output: {
                 globals: {
                   react: 'React',
