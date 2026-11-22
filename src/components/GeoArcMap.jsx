@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import { buildBezierArc, sliceArcAtProgress } from '../lib/arcGeometry';
 import { getLightweightImageUrl } from '../lib/imageOptimizer';
+import { componentStyle } from '../lib/componentStyles';
 
 const CATEGORY_COLORS = {
   production: '#d97706',
@@ -18,6 +19,7 @@ const MAP_STYLES = {
 };
 
 const DEFAULT_ZOOM = 6;
+const EMPTY_APPEARANCE = {};
 
 function ensureGeoTrailLayers(map, isLight) {
   if (!map.getSource('place-polygons')) {
@@ -173,6 +175,10 @@ export function GeoArcMapComponent({
   isPlaying = false,
   onSelectEvent,
   theme = 'dark',
+  classNames,
+  styles,
+  mapStyles,
+  mapAppearance = EMPTY_APPEARANCE,
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -180,6 +186,7 @@ export function GeoArcMapComponent({
   const hasCenteredStepRef = useRef(false);
   const lastCenteredKeyRef = useRef(null);
   const currentStyleUrlRef = useRef(null);
+  const currentStyleThemeRef = useRef(null);
   const isStyleReadyRef = useRef(false);
   const isReplacingPopupRef = useRef(false);
   const [styleReady, setStyleReady] = useState(0);
@@ -187,7 +194,8 @@ export function GeoArcMapComponent({
   const [popupRequest, setPopupRequest] = useState(0);
 
   const isLight = theme === 'light';
-  const targetStyleUrl = MAP_STYLES[isLight ? 'light' : 'dark'];
+  const targetStyleUrl = mapStyles?.[theme] ?? MAP_STYLES[isLight ? 'light' : 'dark'];
+  const categoryColors = mapAppearance.categoryColors;
 
   const plottableEvents = useMemo(
     () =>
@@ -232,6 +240,7 @@ export function GeoArcMapComponent({
     if (!containerRef.current || mapRef.current) return;
 
     currentStyleUrlRef.current = targetStyleUrl;
+    currentStyleThemeRef.current = theme;
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -245,7 +254,7 @@ export function GeoArcMapComponent({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
 
     const handleReady = () => {
-      ensureGeoTrailLayers(map, currentStyleUrlRef.current === MAP_STYLES.light);
+      ensureGeoTrailLayers(map, currentStyleThemeRef.current === 'light');
       isStyleReadyRef.current = true;
       setStyleReady((n) => n + 1);
     };
@@ -279,10 +288,9 @@ export function GeoArcMapComponent({
     const handleContextLost = (e) => {
       e.preventDefault();
       isStyleReadyRef.current = false;
-      setStyleReady(0);
     };
     const handleContextRestored = () => {
-      ensureGeoTrailLayers(map, currentStyleUrlRef.current === MAP_STYLES.light);
+      ensureGeoTrailLayers(map, currentStyleThemeRef.current === 'light');
       isStyleReadyRef.current = true;
       setStyleReady((n) => n + 1);
     };
@@ -305,6 +313,7 @@ export function GeoArcMapComponent({
       map.remove();
       mapRef.current = null;
       currentStyleUrlRef.current = null;
+      currentStyleThemeRef.current = null;
       isStyleReadyRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -313,19 +322,35 @@ export function GeoArcMapComponent({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0) return;
-    if (currentStyleUrlRef.current === targetStyleUrl) return;
+    if (currentStyleUrlRef.current === targetStyleUrl && currentStyleThemeRef.current === theme) return;
 
     currentStyleUrlRef.current = targetStyleUrl;
+    currentStyleThemeRef.current = theme;
     isStyleReadyRef.current = false;
-    setStyleReady(0);
     // Style diffing removes custom layers without emitting style.load.
     map.setStyle(targetStyleUrl, { diff: false });
-  }, [targetStyleUrl, styleReady]);
+  }, [targetStyleUrl, theme, styleReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleReadyRef.current || styleReady === 0 ||
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
+
+    const paint = [
+      ['ghost-arcs-layer', 'line-color', mapAppearance.ghostColor ?? (isLight ? '#94a3b8' : '#475569')],
+      ['active-trail-glow', 'line-color', mapAppearance.transitColor ?? '#0284c7'],
+      ['transit-head-halo', 'circle-color', mapAppearance.transitColor ?? '#0284c7'],
+      ['transit-head-core', 'circle-stroke-color', mapAppearance.transitColor ?? '#0284c7'],
+      ['place-polygons-fill', 'fill-color', mapAppearance.polygonFillColor ?? '#10b981'],
+      ['place-polygons-outline', 'line-color', mapAppearance.polygonOutlineColor ?? '#059669'],
+    ];
+    paint.forEach(([layer, property, value]) => map.setPaintProperty(layer, property, value));
+  }, [mapAppearance, isLight, targetStyleUrl, theme, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
 
     ensureGeoTrailLayers(map, isLight);
     const ghostSource = map.getSource('ghost-arcs');
@@ -358,13 +383,13 @@ export function GeoArcMapComponent({
         zoom: DEFAULT_ZOOM,
       });
     }
-  }, [plottableEvents, legArcs, isLight, styleReady]);
+  }, [plottableEvents, legArcs, isLight, targetStyleUrl, theme, styleReady]);
 
   // Center camera smoothly on target stop whenever the target changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || !targetEvent) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || !targetEvent) return;
 
     const focusKey = `${targetEvent.id ?? targetEvent.index}:${targetEvent.coordinates.join(',')}:${isPlaying ? 'play' : 'idle'}`;
     if (lastCenteredKeyRef.current === focusKey) return;
@@ -386,12 +411,12 @@ export function GeoArcMapComponent({
         essential: true,
       });
     }
-  }, [activeLegIndex, isPlaying, targetEvent, styleReady]);
+  }, [activeLegIndex, isPlaying, targetEvent, targetStyleUrl, theme, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || !targetEvent) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || !targetEvent) return;
 
     if (popupDismissed) {
       isReplacingPopupRef.current = true;
@@ -425,7 +450,7 @@ export function GeoArcMapComponent({
       : '';
 
     const html = `
-      <div class="w-[264px] max-w-full overflow-hidden ${
+      <div class="geotrail-popup w-[264px] max-w-full overflow-hidden ${
         isLight ? 'bg-white text-slate-900' : 'bg-slate-900 text-slate-100'
       }">
         ${imgHtml}
@@ -458,6 +483,18 @@ export function GeoArcMapComponent({
     });
 
     const popupEl = popup.getElement();
+    const popupBody = popupEl?.querySelector('.geotrail-popup');
+    if (popupBody) {
+      if (classNames?.popup) {
+        popupBody.classList.add(...classNames.popup.split(/\s+/).filter(Boolean));
+      }
+      if (styles?.popup) {
+        for (const [property, value] of Object.entries(styles.popup)) {
+          if (property.startsWith('--')) popupBody.style.setProperty(property, value);
+          else popupBody.style[property] = value;
+        }
+      }
+    }
     const popupImg = popupEl?.querySelector('img[data-popup-img]');
     if (popupImg && rawImg?.url) {
       popupImg.addEventListener('error', () => {
@@ -468,12 +505,12 @@ export function GeoArcMapComponent({
     }
 
     popupRef.current = popup;
-  }, [targetEvent, isLight, styleReady, popupDismissed, popupRequest]);
+  }, [targetEvent, isLight, targetStyleUrl, theme, styleReady, popupDismissed, popupRequest, classNames?.popup, styles?.popup]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || plottableEvents.length === 0) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || plottableEvents.length === 0) return;
 
     ensureGeoTrailLayers(map, isLight);
     const trailSource = map.getSource('active-trail');
@@ -491,7 +528,7 @@ export function GeoArcMapComponent({
           index: plotIdx,
           origIndex: ev.index,
           placeLabel: ev.placeLabel,
-          color: CATEGORY_COLORS[ev.category] || CATEGORY_COLORS.other,
+          color: categoryColors?.[ev.category] ?? CATEGORY_COLORS[ev.category] ?? categoryColors?.other ?? CATEGORY_COLORS.other,
           isActive: plotIdx === activePlotIdx,
         },
         geometry: { type: 'Point', coordinates: ev.coordinates },
@@ -504,7 +541,7 @@ export function GeoArcMapComponent({
     for (let i = 0; i < activePlotIdx && i < legArcs.length; i++) {
       trailFeatures.push({
         type: 'Feature',
-        properties: { color: CATEGORY_COLORS[legArcs[i].to.category] || CATEGORY_COLORS.other },
+        properties: { color: categoryColors?.[legArcs[i].to.category] ?? CATEGORY_COLORS[legArcs[i].to.category] ?? categoryColors?.other ?? CATEGORY_COLORS.other },
         geometry: { type: 'LineString', coordinates: legArcs[i].coords },
       });
     }
@@ -519,7 +556,7 @@ export function GeoArcMapComponent({
       if (trail.length >= 2) {
         trailFeatures.push({
           type: 'Feature',
-          properties: { color: CATEGORY_COLORS[currentLeg.to.category] || CATEGORY_COLORS.other },
+          properties: { color: categoryColors?.[currentLeg.to.category] ?? CATEGORY_COLORS[currentLeg.to.category] ?? categoryColors?.other ?? CATEGORY_COLORS.other },
           geometry: { type: 'LineString', coordinates: trail },
         });
       }
@@ -536,9 +573,15 @@ export function GeoArcMapComponent({
         },
       ],
     });
-  }, [activeLegIndex, legProgress, isPlaying, plottableEvents, legArcs, isLight, styleReady]);
+  }, [activeLegIndex, legProgress, isPlaying, plottableEvents, legArcs, isLight, targetStyleUrl, theme, styleReady, categoryColors]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  return (
+    <div
+      ref={containerRef}
+      {...componentStyle('map', classNames, styles)}
+      className={`${componentStyle('map', classNames, styles).className} w-full h-full`}
+    />
+  );
 }
 
 export const GeoArcMap = React.memo(GeoArcMapComponent);

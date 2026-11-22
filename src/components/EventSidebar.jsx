@@ -14,6 +14,7 @@ import {
   Moon,
 } from 'lucide-react';
 import { getLightweightImageUrl } from '../lib/imageOptimizer';
+import { componentStyle } from '../lib/componentStyles';
 
 const BADGE_STYLES = {
   dark: {
@@ -41,6 +42,8 @@ export const EventSidebar = React.memo(function EventSidebar({
   isLoading,
   allowInput = true,
   theme = 'dark',
+  classNames,
+  styles,
   onToggleTheme,
   onTogglePlay,
   onReset,
@@ -81,13 +84,17 @@ export const EventSidebar = React.memo(function EventSidebar({
 
   return (
     <aside
-      className={`w-full lg:w-[410px] h-[48vh] lg:h-full border-t lg:border-t-0 lg:border-r flex flex-col z-10 transition-colors ${
+      {...componentStyle('sidebar', classNames, styles)}
+      className={`${componentStyle('sidebar', classNames, styles).className} w-full lg:w-[410px] h-[48vh] lg:h-full border-t lg:border-t-0 lg:border-r flex flex-col z-10 transition-colors ${
         isLight
           ? 'bg-white border-slate-200 text-slate-900'
           : 'bg-slate-900 border-slate-800 text-slate-100'
       }`}
     >
-      <div className={`p-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}>
+      <div
+        {...componentStyle('sidebarHeader', classNames, styles)}
+        className={`${componentStyle('sidebarHeader', classNames, styles).className} p-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-800'}`}
+      >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <span
@@ -105,9 +112,10 @@ export const EventSidebar = React.memo(function EventSidebar({
           <div className="flex items-center gap-1.5 shrink-0">
             {onToggleTheme && (
               <button
+                {...componentStyle('themeButton', classNames, styles)}
                 type="button"
                 onClick={onToggleTheme}
-                className={`inline-flex items-center justify-center w-8 h-8 rounded-lg border transition ${
+                className={`${componentStyle('themeButton', classNames, styles).className} inline-flex items-center justify-center w-8 h-8 rounded-lg border transition ${
                   isLight
                     ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
@@ -120,9 +128,10 @@ export const EventSidebar = React.memo(function EventSidebar({
 
             {allowInput && (
               <button
+                {...componentStyle('loadButton', classNames, styles)}
                 type="button"
                 onClick={() => setShowJsonInput((v) => !v)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${
+                className={`${componentStyle('loadButton', classNames, styles).className} inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${
                   isLight
                     ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
@@ -142,14 +151,19 @@ export const EventSidebar = React.memo(function EventSidebar({
         )}
 
         {allowInput && showJsonInput && (
-          <form onSubmit={handleSubmit} className="mt-3 space-y-2">
+          <form
+            {...componentStyle('loadForm', classNames, styles)}
+            onSubmit={handleSubmit}
+            className={`${componentStyle('loadForm', classNames, styles).className} mt-3 space-y-2`}
+          >
             <textarea
+              {...componentStyle('loadInput', classNames, styles)}
               value={rawInput}
               onChange={(e) => setRawInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="Paste a Linked Art URL (https://...) or JSON-LD payload..."
               rows={4}
-              className={`w-full rounded-lg border p-2.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
+              className={`${componentStyle('loadInput', classNames, styles).className} w-full rounded-lg border p-2.5 text-xs font-mono focus:outline-none focus:border-sky-500 ${
                 isLight
                   ? 'bg-slate-50 border-slate-300 text-slate-900'
                   : 'bg-slate-950 border-slate-700 text-slate-200'
@@ -174,23 +188,26 @@ export const EventSidebar = React.memo(function EventSidebar({
       </div>
 
       <div
-        className={`px-4 py-3 border-b flex items-center gap-3 ${
+        {...componentStyle('controls', classNames, styles)}
+        className={`${componentStyle('controls', classNames, styles).className} px-4 py-3 border-b flex items-center gap-3 ${
           isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/60 border-slate-800'
         }`}
       >
         <button
+          {...componentStyle('playButton', classNames, styles)}
           type="button"
           onClick={onTogglePlay}
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-sky-600 hover:bg-sky-500 text-white transition"
+          className={`${componentStyle('playButton', classNames, styles).className} inline-flex items-center justify-center w-8 h-8 rounded-full bg-sky-600 hover:bg-sky-500 text-white transition`}
           title={isPlaying ? 'Pause animation' : 'Play trajectory'}
         >
           {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
         </button>
 
         <button
+          {...componentStyle('resetButton', classNames, styles)}
           type="button"
           onClick={onReset}
-          className={`inline-flex items-center justify-center w-8 h-8 rounded-full transition ${
+          className={`${componentStyle('resetButton', classNames, styles).className} inline-flex items-center justify-center w-8 h-8 rounded-full transition ${
             isLight
               ? 'bg-slate-200 hover:bg-slate-300 text-slate-700'
               : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
@@ -202,12 +219,13 @@ export const EventSidebar = React.memo(function EventSidebar({
 
         <div className="flex-1">
           <input
+            {...componentStyle('timeline', classNames, styles)}
             type="range"
             min={0}
             max={Math.max(0, trail.events.length - 1)}
             value={activeLegIndex}
             onChange={(e) => onSelectStep(Number(e.target.value))}
-            className="w-full accent-sky-600 cursor-pointer"
+            className={`${componentStyle('timeline', classNames, styles).className} w-full accent-sky-600 cursor-pointer`}
           />
           <div
             className={`flex justify-between text-[11px] mt-0.5 ${
@@ -222,19 +240,26 @@ export const EventSidebar = React.memo(function EventSidebar({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+      <div
+        {...componentStyle('eventList', classNames, styles)}
+        className={`${componentStyle('eventList', classNames, styles).className} flex-1 overflow-y-auto p-3 space-y-2.5`}
+      >
         {trail.events.map((ev) => {
           const isCurrent = ev.index === activeLegIndex;
           const isVisited = ev.index <= activeLegIndex;
 
           return (
             <div
+              {...componentStyle('eventCard', classNames, styles)}
+              data-active={isCurrent}
+              data-visited={isVisited}
+              data-category={ev.category}
               ref={(node) => {
                 eventCardRefs.current[ev.index] = node;
               }}
               key={ev.id}
               onClick={() => onSelectStep(ev.index)}
-              className={`rounded-xl p-3 border cursor-pointer transition ${
+              className={`${componentStyle('eventCard', classNames, styles).className} rounded-xl p-3 border cursor-pointer transition ${
                 isCurrent
                   ? isLight
                     ? 'bg-sky-50/70 border-sky-500 shadow-sm'
@@ -250,7 +275,8 @@ export const EventSidebar = React.memo(function EventSidebar({
             >
               <div className="flex items-center justify-between gap-2">
                 <span
-                  className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                  {...componentStyle('eventBadge', classNames, styles)}
+                  className={`${componentStyle('eventBadge', classNames, styles).className} text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                     badges[ev.category] || badges.other
                   }`}
                 >
@@ -358,7 +384,8 @@ export const EventSidebar = React.memo(function EventSidebar({
 
         {trail.warnings.length > 0 && (
           <div
-            className={`rounded-lg border p-2.5 text-[11px] space-y-1 ${
+            {...componentStyle('warnings', classNames, styles)}
+            className={`${componentStyle('warnings', classNames, styles).className} rounded-lg border p-2.5 text-[11px] space-y-1 ${
               isLight
                 ? 'bg-amber-50 border-amber-200 text-amber-900'
                 : 'bg-amber-950/30 border-amber-500/30 text-amber-200'
@@ -374,8 +401,9 @@ export const EventSidebar = React.memo(function EventSidebar({
 
       {lightboxImage && (
         <div
+          {...componentStyle('lightbox', classNames, styles)}
           onClick={() => setLightboxImage(null)}
-          className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-6 cursor-zoom-out"
+          className={`${componentStyle('lightbox', classNames, styles).className} fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-6 cursor-zoom-out`}
         >
           <img
             src={lightboxImage}

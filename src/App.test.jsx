@@ -53,4 +53,30 @@ describe('playback in Strict Mode', () => {
     fireEvent.click(screen.getByTitle('Play trajectory'));
     expect(mapState()).toEqual({ activeLegIndex: 0, legProgress: 0, isPlaying: true });
   });
+
+  describe('interface customization', () => {
+    it('applies named styles and classes without removing default theme or behavior', async () => {
+      const { container, rerender } = render(
+        <App
+          record={record}
+          classNames={{ root: 'host-root', sidebar: 'host-sidebar', eventCard: 'host-card' }}
+          styles={{ sidebar: { width: '350px' }, eventCard: { borderRadius: '2px' } }}
+        />
+      );
+      await act(async () => {});
+      expect(container.querySelector('.geotrail-root.host-root').dataset.theme).toBe('dark');
+      expect(container.querySelector('.geotrail-sidebar.host-sidebar').style.width).toBe('350px');
+      const cards = container.querySelectorAll('.geotrail-eventCard.host-card');
+      expect(cards).toHaveLength(2);
+      expect(cards[0].style.borderRadius).toBe('2px');
+      expect(cards[0].dataset.active).toBe('true');
+      fireEvent.click(cards[1]);
+      expect(cards[1].dataset.active).toBe('true');
+
+      rerender(<App record={record} theme="light" />);
+      expect(container.querySelector('.geotrail-root').dataset.theme).toBe('light');
+      expect(container.querySelector('.geotrail-sidebar').style.width).toBe('');
+      expect(container.querySelector('.geotrail-eventCard').classList.contains('host-card')).toBe(false);
+    });
+  });
 });

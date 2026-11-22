@@ -3,6 +3,7 @@ import { enrichTrailWithGeocoding, extractLinkedArtTrail } from './lib/linkedArt
 import { loadLinkedArtInput } from './lib/linkedArtFetcher';
 import { SAMPLE_LINKED_ART_RECORD } from './data/sampleRecord';
 import { EventSidebar } from './components/EventSidebar';
+import { componentStyle } from './lib/componentStyles';
 
 const GeoArcMap = lazy(() =>
   import('./components/GeoArcMap').then((m) => ({ default: m.GeoArcMap }))
@@ -15,6 +16,10 @@ export function App({
   record = SAMPLE_LINKED_ART_RECORD,
   allowInput = true,
   theme: initialTheme = 'dark',
+  classNames,
+  styles,
+  mapStyles,
+  mapAppearance,
 }) {
   const [theme, setTheme] = useState(initialTheme);
   const [trail, setTrail] = useState(() => extractLinkedArtTrail(record));
@@ -140,9 +145,11 @@ export function App({
 
   return (
     <div
-      className={`w-full h-full flex flex-col-reverse lg:flex-row overflow-hidden transition-colors ${
+      {...componentStyle('root', classNames, styles)}
+      className={`${componentStyle('root', classNames, styles).className} w-full h-full flex flex-col-reverse lg:flex-row overflow-hidden transition-colors ${
         isLight ? 'bg-slate-50 text-slate-900' : 'bg-slate-950 text-slate-100'
       }`}
+      data-theme={theme}
     >
       <EventSidebar
         trail={trail}
@@ -151,6 +158,8 @@ export function App({
         isLoading={isLoading}
         allowInput={allowInput}
         theme={theme}
+        classNames={classNames}
+        styles={styles}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         onTogglePlay={handleTogglePlay}
         onReset={handleReset}
@@ -158,7 +167,10 @@ export function App({
         onLoadInput={handleLoadInput}
       />
 
-      <main className="relative flex-1 h-[52vh] lg:h-full">
+      <main
+        {...componentStyle('mapContainer', classNames, styles)}
+        className={`${componentStyle('mapContainer', classNames, styles).className} relative flex-1 h-[52vh] lg:h-full`}
+      >
         {parseError && (
           <div className="absolute top-3 left-3 z-20 max-w-md bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs px-3 py-2 rounded-lg">
             Load Error: {parseError}
@@ -182,6 +194,10 @@ export function App({
             isPlaying={isPlaying}
             onSelectEvent={handleSelectStep}
             theme={theme}
+            classNames={classNames}
+            styles={styles}
+            mapStyles={mapStyles}
+            mapAppearance={mapAppearance}
           />
         </Suspense>
       </main>

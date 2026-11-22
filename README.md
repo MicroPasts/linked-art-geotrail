@@ -201,6 +201,80 @@ export function MuseumObjectTrail() {
 | `record` | `Object` | `SAMPLE_LINKED_ART_RECORD` | Initial Linked Art JSON-LD document to parse and plot. |
 | `allowInput` | `boolean` | `true` | Shows or hides the **Load URL / JSON** button and input drawer. |
 | `theme` | `'dark' \| 'light'` | `'dark'` | Sets the initial visual theme for the sidebar, popups, and map style. |
+| `classNames` | `Object` | — | Additional CSS classes for named interface parts. |
+| `styles` | `Object` | — | Inline React style objects for named interface parts. |
+| `mapStyles` | `Object` | Built-in basemaps | Optional `dark` and `light` MapLibre style URLs or style specification objects. |
+| `mapAppearance` | `Object` | Built-in colors | Optional map trail, node, and polygon color overrides. |
+
+### Customizing styles
+
+The default stylesheet and light/dark themes remain the starting point.
+Provide `classNames` or `styles` to customize individual parts without
+replacing the component. Both props also work with the UMD `mount` function.
+
+```jsx
+import GeoTrail from '@micropasts/linked-art-geotrail';
+import '@micropasts/linked-art-geotrail/style.css';
+import './museum-geotrail.css';
+
+const mapStyles = {
+  dark: 'https://example.org/maps/dark/style.json',
+  light: 'https://example.org/maps/light/style.json',
+};
+
+export function MuseumTrail({ record }) {
+  return (
+    <div style={{ height: 700 }}>
+      <GeoTrail
+        record={record}
+        classNames={{ root: 'museum-trail', eventCard: 'museum-card' }}
+        styles={{ sidebar: { width: '350px' }, popup: { color: '#222' } }}
+        mapStyles={mapStyles}
+        mapAppearance={{
+          ghostColor: '#777777',
+          transitColor: '#9b2861',
+          polygonFillColor: '#b3d9bd',
+          polygonOutlineColor: '#438553',
+          categoryColors: { production: '#a44a16', provenance: '#9b2861' },
+        }}
+      />
+    </div>
+  );
+}
+```
+
+In the stylesheet, use the stable `geotrail-*` hooks or your own classes.
+For example:
+
+```css
+.museum-trail .geotrail-sidebar { font-family: Georgia, serif; }
+.museum-trail .museum-card[data-active="true"] { border-color: #9b2861; }
+.museum-trail .geotrail-popup { font-family: Georgia, serif; }
+```
+
+Load overrides after the package stylesheet and use selectors with sufficient
+specificity to override the default utilities. `styles` takes precedence for
+normal CSS properties; CSS variables can also be supplied with keys such as
+`'--accent'`. The root has a `data-theme` attribute, and event cards expose
+`data-active`, `data-visited`, and `data-category`.
+
+The keys supported by both `classNames` and `styles` are `root`, `sidebar`,
+`sidebarHeader`, `themeButton`, `loadButton`, `loadForm`, `loadInput`,
+`controls`, `playButton`, `resetButton`, `timeline`, `eventList`, `eventCard`,
+`eventBadge`, `warnings`, `lightbox`, `mapContainer`, `map`, and `popup`.
+Their stable CSS hooks use the same key prefixed with `geotrail-`, for example
+`.geotrail-eventCard`. The `popup` hook applies to the popup's inner content;
+MapLibre's outer popup controls can be targeted with descendant selectors
+such as `.museum-trail .maplibregl-popup-close-button`.
+
+`mapStyles` accepts a MapLibre style URL or style specification for either
+theme; omitted entries use the built-in basemaps. Custom styles must provide
+the glyphs required to render the map labels. Keep style objects stable between
+React renders to avoid unnecessary map reloads. `mapAppearance` accepts
+`ghostColor`, `transitColor`, `polygonFillColor`, `polygonOutlineColor`, and
+`categoryColors` (`production`, `discovery`, `provenance`, `exhibition`,
+`current_location`, or `other`). Missing colors retain the defaults. Map colors
+must be valid MapLibre color values, not CSS variables.
 
 ## How Linked Art Records Are Extracted
 
