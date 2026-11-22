@@ -182,6 +182,7 @@ function ensureGeoTrailLayers(map, isLight, font) {
           'concat',
           ['to-string', ['+', ['get', 'index'], 1]],
           '. ',
+          ['case', ['boolean', ['get', 'sharedPlace'], false], ['concat', ['get', 'title'], ' — '], ''],
           ['get', 'placeLabel'],
         ],
         'text-size': 12,
@@ -242,7 +243,8 @@ export function GeoArcMapComponent({
   const mapRef = useRef(null);
   const popupRef = useRef(null);
   const hasCenteredStepRef = useRef(false);
-  const lastCenteredKeyRef = useRef(null);
+  const lastCameraStateRef = useRef(null);
+  const followSuspendedIndexRef = useRef(null);
   const currentStyleUrlRef = useRef(null);
   const currentStyleThemeRef = useRef(null);
   const currentMapLightRef = useRef(false);
@@ -295,26 +297,35 @@ export function GeoArcMapComponent({
     }
     return index;
   }, [plottableEvents, activeLegIndex]);
+  const sharedCoordinates = useMemo(() => {
+    const seen = new Set();
+    const shared = new Set();
+    plottableEvents.forEach((event) => {
+      const key = event.coordinates.join(',');
+      if (seen.has(key)) shared.add(key);
+      seen.add(key);
+    });
+    return shared;
+  }, [plottableEvents]);
   const visibleNodes = useMemo(() => {
     const visible = plottableEvents.slice(0, activePlotIdx + 1);
     const groups = new globalThis.Map();
     visible.forEach((event, index) => {
       const key = event.coordinates.join(',');
-      const group = groups.get(key) ?? { count: 0, lastIndex: index };
-      group.count += 1;
-      group.lastIndex = index;
-      groups.set(key, group);
+      const previous = groups.get(key);
+      groups.set(key, { event, index, pulseOwner: Boolean(previous) });
     });
-    return visible.map((event, index) => {
-      const group = groups.get(event.coordinates.join(','));
-      return { event, index, pulseOwner: group.count > 1 && group.lastIndex === index };
-    });
+    return [...groups.values()];
   }, [plottableEvents, activePlotIdx]);
   const hasSharedPlace = visibleNodes.some((node) => node.pulseOwner);
   const currentEvent = plottableEvents[activePlotIdx] ?? null;
   const nextEvent = plottableEvents[activePlotIdx + 1];
   const isDrawingLeg = activePlotIdx >= 0 && nextEvent?.index === activeLegIndex + 1;
-  const cameraEvent = isPlaying && isDrawingLeg ? nextEvent : currentEvent;
+  const activeArc = isDrawingLeg ? legArcs[activePlotIdx] : null;
+  const activeSlice = useMemo(
+    () => activeArc && (isPlaying || legProgress > 0) ? sliceArcAtProgress(activeArc.coords, legProgress) : null,
+    [activeArc, isPlaying, legProgress]
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -347,6 +358,12 @@ export function GeoArcMapComponent({
       const msg = err?.error?.message || '';
       if (msg && msg !== 'Load failed') {
         console.warn('MapLibre warning:', msg);
+      }
+    });
+
+    map.on('dragstart', (event) => {
+      if (event.originalEvent && lastCameraStateRef.current?.playing) {
+        followSuspendedIndexRef.current = lastCameraStateRef.current.index;
       }
     });
 
@@ -463,33 +480,37 @@ export function GeoArcMapComponent({
 
   }, [plottableEvents, legArcs, activeLegIndex, isLightMap, mapFont, targetStyleUrl, theme, styleReady]);
 
-  // Center camera smoothly on target stop whenever the target changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map || styleReady === 0 || !isStyleReadyRef.current ||
-        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme || !cameraEvent) return;
+        currentStyleUrlRef.current !== targetStyleUrl || currentStyleThemeRef.current !== theme) return;
 
-    const focusKey = `${cameraEvent.id ?? cameraEvent.index}:${cameraEvent.coordinates.join(',')}:${isPlaying ? 'play' : 'idle'}`;
-    if (lastCenteredKeyRef.current === focusKey) return;
+    const previous = lastCameraStateRef.current;
+    const eventKey = currentEvent ? `${currentEvent.id ?? currentEvent.index}:${currentEvent.coordinates.join(',')}` : null;
+    const changedEvent = previous?.eventKey !== eventKey || previous?.index !== activeLegIndex ||
+      (!isPlaying && legProgress === 0 && previous?.progress > 0);
+    const changedPlayback = !previous || previous.playing !== isPlaying ||
+      previous.index !== activeLegIndex || previous.progress !== legProgress;
 
-    const isInitialOrigin = activeLegIndex === 0 && !isPlaying && !hasCenteredStepRef.current;
-    lastCenteredKeyRef.current = focusKey;
-
-    if (isInitialOrigin) {
-      map.jumpTo({
-        center: cameraEvent.coordinates,
-        zoom: DEFAULT_ZOOM,
-      });
-    } else {
-      hasCenteredStepRef.current = true;
-      map.easeTo({
-        center: cameraEvent.coordinates,
-        zoom: DEFAULT_ZOOM,
-        duration: 1200,
-        essential: true,
-      });
+    if (previous && (previous.index !== activeLegIndex || (!previous.playing && isPlaying))) {
+      followSuspendedIndexRef.current = null;
     }
-  }, [activeLegIndex, isPlaying, cameraEvent, targetStyleUrl, theme, styleReady]);
+
+    if (currentEvent && isPlaying && activeSlice && changedPlayback && followSuspendedIndexRef.current !== activeLegIndex) {
+      map.jumpTo({ center: activeSlice.head });
+      hasCenteredStepRef.current = true;
+    } else if (currentEvent && changedEvent) {
+      const completedPlayback = previous?.playing && !isPlaying &&
+        previous.index + 1 === activeLegIndex && previous.progress >= 0.95;
+      if ((!hasCenteredStepRef.current && activeLegIndex === 0) || completedPlayback || isPlaying) {
+        map.jumpTo({ center: currentEvent.coordinates });
+      } else {
+        map.easeTo({ center: currentEvent.coordinates, zoom: DEFAULT_ZOOM, duration: 1200, essential: true });
+      }
+      hasCenteredStepRef.current = true;
+    }
+    lastCameraStateRef.current = { eventKey, index: activeLegIndex, progress: legProgress, playing: isPlaying };
+  }, [activeLegIndex, legProgress, isPlaying, currentEvent, activeSlice, targetStyleUrl, theme, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -600,7 +621,9 @@ export function GeoArcMapComponent({
         properties: {
           index: plotIdx,
           origIndex: ev.index,
+          title: ev.title || ev.placeLabel,
           placeLabel: ev.placeLabel,
+          sharedPlace: sharedCoordinates.has(ev.coordinates.join(',')),
           color: categoryColor(ev.category, categoryColors),
           isActive: plotIdx === activePlotIdx,
           pulseOwner,
@@ -608,7 +631,7 @@ export function GeoArcMapComponent({
         geometry: { type: 'Point', coordinates: ev.coordinates },
       })),
     });
-  }, [activePlotIdx, visibleNodes, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
+  }, [activePlotIdx, visibleNodes, sharedCoordinates, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -668,23 +691,24 @@ export function GeoArcMapComponent({
     let headCoord = currentEvent?.coordinates;
 
     // Draw the currently advancing arc from `activePlotIdx` -> `activePlotIdx + 1`
-    if (isDrawingLeg && (isPlaying || legProgress > 0)) {
-      const currentLeg = legArcs[activePlotIdx];
-      const { trail, head } = sliceArcAtProgress(currentLeg.coords, legProgress);
-      headCoord = head;
-      if (trail.length >= 2) {
+    if (activeSlice) {
+      headCoord = activeSlice.head;
+      if (activeSlice.trail.length >= 2) {
         trailFeatures.push({
           type: 'Feature',
-          properties: { color: categoryColor(currentLeg.to.category, categoryColors) },
-          geometry: { type: 'LineString', coordinates: trail },
+          properties: { color: categoryColor(activeArc.to.category, categoryColors) },
+          geometry: { type: 'LineString', coordinates: activeSlice.trail },
         });
       }
     }
 
+    const sharedCurrentPlace = visibleNodes.some((node) => node.index === activePlotIdx && node.pulseOwner);
+    const headOverSharedNode = sharedCurrentPlace && headCoord?.every((value, index) => value === currentEvent.coordinates[index]);
+
     trailSource.setData({ type: 'FeatureCollection', features: trailFeatures });
     headSource.setData({
       type: 'FeatureCollection',
-      features: headCoord ? [
+      features: headCoord && !headOverSharedNode ? [
         {
           type: 'Feature',
           properties: {},
@@ -692,7 +716,7 @@ export function GeoArcMapComponent({
         },
       ] : [],
     });
-  }, [activePlotIdx, currentEvent, isDrawingLeg, legProgress, isPlaying, plottableEvents, legArcs, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
+  }, [activePlotIdx, currentEvent, activeArc, activeSlice, visibleNodes, plottableEvents, legArcs, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
 
   return (
     <div className="relative w-full h-full">
@@ -726,7 +750,10 @@ export function GeoArcMapComponent({
         aria-label="Recenter map on current stop"
         title="Recenter map on current stop"
         disabled={!currentEvent || styleReady === 0}
-        onClick={() => mapRef.current?.easeTo({ center: currentEvent.coordinates, duration: 800 })}
+        onClick={() => {
+          if (isPlaying) followSuspendedIndexRef.current = activeLegIndex;
+          mapRef.current?.easeTo({ center: currentEvent.coordinates, duration: 800 });
+        }}
       >
         <LocateFixed size={18} aria-hidden="true" />
       </button>

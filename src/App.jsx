@@ -1,5 +1,6 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import { enrichTrailWithGeocoding, extractLinkedArtTrail } from './lib/linkedArtExtractor';
+import { legDuration } from './lib/animationTiming';
 import { loadLinkedArtInput } from './lib/linkedArtFetcher';
 import { SAMPLE_LINKED_ART_RECORD } from './data/sampleRecord';
 import { EventSidebar } from './components/EventSidebar';
@@ -9,7 +10,6 @@ const GeoArcMap = lazy(() =>
   import('./components/GeoArcMap').then((m) => ({ default: m.GeoArcMap }))
 );
 
-const LEG_DURATION_MS = 4500;
 const ANIMATION_FRAME_MS = 1000 / 30;
 
 export function App({
@@ -28,6 +28,10 @@ export function App({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [parseError, setParseError] = useState(null);
+  const legDurations = useMemo(
+    () => trail.events.map((_, index) => legDuration(trail.events, index)),
+    [trail.events]
+  );
 
   useEffect(() => {
     setTheme(initialTheme);
@@ -75,7 +79,7 @@ export function App({
 
       if (now - lastRenderTime >= ANIMATION_FRAME_MS) {
         lastRenderTime = now;
-        progress += elapsedMs / LEG_DURATION_MS;
+        progress += elapsedMs / legDurations[currentIndex];
         elapsedMs = 0;
         if (progress >= 1) {
           currentIndex += 1;
@@ -95,7 +99,7 @@ export function App({
 
     frameId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frameId);
-  }, [isPlaying, trail.events.length]);
+  }, [isPlaying, trail.events.length, legDurations]);
 
   const handleLoadInput = useCallback(async (raw) => {
     setIsLoading(true);

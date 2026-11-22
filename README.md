@@ -7,15 +7,20 @@ An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+j
 * **Event-to-place arcs:** Extracts spatial events from production, discovery, provenance, exhibitions, and current-location fields, then plots and animates quadratic Bezier trajectories.
 * **Manual playback:** Starts at the origin and advances through **Play**, timeline scrubbing, or event selection.
   During playback, each solid trail draws to the next mapped stop before its
-  marker, label, polygon, and popup appear. Dashed arcs preview the route.
+  marker, label, polygon, and popup appear, with the camera following the
+  moving trail. Legs over 2,000 km take longer, up to 18 seconds, so long
+  journeys do not race across the map. Dragging the map or using recenter temporarily stops camera
+  following until playback resumes or advances to the next event. Dashed arcs
+  preview the route.
   Pausing preserves the current progress; selecting an event reveals it
   immediately, and resetting returns to the origin. If intermediate events
   have no coordinates, the trail to the next mapped stop draws during the
   final leg before that stop.
 * **Map legend and shared places:** A collapsible floating legend explains the
   map colours. When two or more revealed events have identical coordinates,
-  their shared point pulses; it uses a static halo when reduced motion is
-  preferred.
+  their shared point pulses and shows the latest revealed event's title, place
+  and category colour. Clicking it selects that event. The point uses a static
+  halo when reduced motion is preferred.
 * **Recenter map:** Return to the most recently revealed mapped stop without
   changing the zoom. The control is disabled until a mapped stop is available.
 * **WKT and text-place resolution:** Supports `POINT`, `POLYGON`, and `MULTIPOLYGON`; text places can use the built-in gazetteer or a cached Nominatim fallback.

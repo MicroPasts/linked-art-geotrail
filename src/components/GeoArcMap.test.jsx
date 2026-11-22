@@ -84,6 +84,64 @@ describe('map style and popup lifecycle', () => {
     expect(setWorkerUrl).toHaveBeenCalledWith('/maplibre-gl-worker.js');
   });
 
+  it('follows the moving trail head through playback, pause, resume and arrival', () => {
+    const stops = [events[0], { ...events[1], coordinates: [-74, 40] }];
+    const { rerender } = render(<GeoArcMap events={stops} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    map.jumpTo.mockClear();
+    map.easeTo.mockClear();
+    for (const progress of [0.1, 0.5, 0.98]) {
+      rerender(<GeoArcMap events={stops} isPlaying legProgress={progress} />);
+      const trail = map.getSource('active-trail').data.features[0].geometry.coordinates;
+      expect(map.jumpTo).toHaveBeenLastCalledWith({ center: trail.at(-1) });
+      expect(map.jumpTo.mock.lastCall[0].center).toEqual(map.getSource('transit-head').data.features[0].geometry.coordinates);
+    }
+    expect(map.easeTo).not.toHaveBeenCalled();
+    map.jumpTo.mockClear();
+    rerender(<GeoArcMap events={stops} legProgress={0.98} />);
+    expect(map.jumpTo).not.toHaveBeenCalled();
+    expect(map.easeTo).not.toHaveBeenCalled();
+    rerender(<GeoArcMap events={stops} isPlaying legProgress={0.98} />);
+    expect(map.jumpTo).toHaveBeenCalledOnce();
+    rerender(<GeoArcMap events={stops} activeLegIndex={1} />);
+    expect(map.jumpTo).toHaveBeenLastCalledWith({ center: stops[1].coordinates });
+    expect(map.easeTo).not.toHaveBeenCalled();
+    rerender(<GeoArcMap events={stops} activeLegIndex={0} />);
+    expect(map.easeTo).toHaveBeenLastCalledWith({ center: stops[0].coordinates, zoom: 6, duration: 1200, essential: true });
+  });
+
+  it('lets users pan or recenter during playback until playback resumes or advances', () => {
+    const { rerender } = render(<GeoArcMap events={events} isPlaying legProgress={0.2} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    act(() => map.emit('dragstart', { originalEvent: {} }));
+    map.jumpTo.mockClear();
+    rerender(<GeoArcMap events={events} isPlaying legProgress={0.3} />);
+    expect(map.jumpTo).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Recenter map on current stop' }));
+    expect(map.easeTo).toHaveBeenLastCalledWith({ center: events[0].coordinates, duration: 800 });
+    rerender(<GeoArcMap events={events} isPlaying legProgress={0.4} />);
+    expect(map.jumpTo).not.toHaveBeenCalled();
+    rerender(<GeoArcMap events={events} legProgress={0.4} />);
+    rerender(<GeoArcMap events={events} isPlaying legProgress={0.4} />);
+    expect(map.jumpTo).toHaveBeenCalledOnce();
+  });
+
+  it('does not follow a future stop across an unresolved event', () => {
+    const stops = [events[0], { ...events[1], coordinates: null }, { ...events[1], index: 2 }];
+    const { rerender } = render(<GeoArcMap events={stops} isPlaying legProgress={0.5} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    map.jumpTo.mockClear();
+    rerender(<GeoArcMap events={stops} isPlaying legProgress={0.75} />);
+    expect(map.jumpTo).not.toHaveBeenCalled();
+    rerender(<GeoArcMap events={stops} activeLegIndex={1} isPlaying legProgress={0.5} />);
+    expect(map.jumpTo).toHaveBeenLastCalledWith({
+      center: map.getSource('transit-head').data.features[0].geometry.coordinates,
+    });
+  });
+
   it('switches basemaps without losing trail state, popup dismissal or custom theme styles', () => {
     const mapStyles = { dark: 'https://example.test/dark', light: 'https://example.test/light' };
     const props = { events, mapStyles, activeLegIndex: 0, legProgress: 0.5, isPlaying: true };
@@ -208,7 +266,7 @@ describe('map style and popup lifecycle', () => {
     expect(requestFrame).not.toHaveBeenCalled();
 
     rerender(<GeoArcMap events={stops} activeLegIndex={1} />);
-    expect(nodes().map((node) => node.properties.pulseOwner)).toEqual([false, true]);
+    expect(nodes().map((node) => node.properties.pulseOwner)).toEqual([true]);
     expect(map.getLayer('event-nodes-pulse').filter).toEqual(['==', ['get', 'pulseOwner'], true]);
     act(() => callback(800));
     expect(map.getLayer('event-nodes-pulse').paint['circle-radius']).toBe(26);
@@ -216,13 +274,50 @@ describe('map style and popup lifecycle', () => {
 
     rerender(<GeoArcMap events={stops} activeLegIndex={2} theme="light" />);
     act(() => map.emit('style.load'));
-    expect(nodes().map((node) => node.properties.pulseOwner)).toEqual([false, true, false]);
+    expect(nodes().map((node) => node.properties.pulseOwner)).toEqual([true, false]);
     act(() => callback(1200));
     expect(map.getLayer('event-nodes-pulse').paint['circle-radius']).toBe(31);
     rerender(<GeoArcMap events={stops} activeLegIndex={0} theme="light" />);
     expect(nodes().map((node) => node.properties.pulseOwner)).toEqual([false]);
     expect(cancelFrame).toHaveBeenCalledWith(42);
     unmount();
+  });
+
+  it('updates the shared marker and label to the latest revealed event and its category', () => {
+    const stops = [
+      { ...events[0], title: 'Made', placeLabel: 'Rome' },
+      { ...events[1], title: 'Found', placeLabel: 'Rome', coordinates: events[0].coordinates },
+      { ...events[0], index: 2, id: 'c', title: 'Exhibited', placeLabel: 'Rome', category: 'exhibition' },
+      { ...events[1], index: 3 },
+    ];
+    const onSelectEvent = vi.fn();
+    const props = { events: stops, onSelectEvent, mapAppearance: { categoryColors: { discovery: '#abcdef' } } };
+    const { rerender } = render(<GeoArcMap {...props} isPlaying legProgress={0.5} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    const nodes = () => map.getSource('event-nodes').data.features;
+    expect(nodes()[0].properties).toMatchObject({ origIndex: 0, index: 0, title: 'Made', color: '#d97706', sharedPlace: true, pulseOwner: false });
+
+    rerender(<GeoArcMap {...props} activeLegIndex={1} isPlaying legProgress={0.5} />);
+    expect(nodes()).toHaveLength(1);
+    expect(nodes()[0].properties).toMatchObject({ origIndex: 1, index: 1, title: 'Found', placeLabel: 'Rome', color: '#abcdef', pulseOwner: true, isActive: true });
+    expect(map.getSource('transit-head').data.features).toHaveLength(0);
+    const label = map.getLayer('event-nodes-label').layout['text-field'];
+    expect(label).toEqual(['concat', ['to-string', ['+', ['get', 'index'], 1]], '. ', ['case', ['boolean', ['get', 'sharedPlace'], false], ['concat', ['get', 'title'], ' — '], ''], ['get', 'placeLabel']]);
+    act(() => map.emit('click', { features: [nodes()[0]] }));
+    expect(onSelectEvent).toHaveBeenCalledWith(1);
+
+    rerender(<GeoArcMap {...props} activeLegIndex={2} />);
+    expect(nodes()).toHaveLength(1);
+    expect(nodes()[0].properties).toMatchObject({ origIndex: 2, index: 2, title: 'Exhibited', color: '#9333ea', pulseOwner: true });
+    rerender(<GeoArcMap {...props} activeLegIndex={3} />);
+    expect(nodes().map((node) => node.properties.origIndex)).toEqual([2, 3]);
+    expect(nodes()[0].properties.isActive).toBe(false);
+    rerender(<GeoArcMap {...props} activeLegIndex={1} theme="light" />);
+    act(() => map.emit('style.load'));
+    expect(nodes()[0].properties).toMatchObject({ origIndex: 1, title: 'Found', color: '#abcdef', pulseOwner: true });
+    rerender(<GeoArcMap {...props} activeLegIndex={0} theme="light" />);
+    expect(nodes()[0].properties).toMatchObject({ origIndex: 0, title: 'Made', color: '#d97706', pulseOwner: false });
   });
 
   it('keeps a static shared-place halo when reduced motion is requested', () => {

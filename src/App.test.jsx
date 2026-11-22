@@ -69,6 +69,22 @@ describe('record loader', () => {
 });
 
 describe('playback in Strict Mode', () => {
+  it('takes longer to draw long-distance legs', async () => {
+    const longRecord = {
+      ...record,
+      current_location: { _label: 'New York', defined_by: 'POINT (-74 40.7)' },
+    };
+    render(<App record={longRecord} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(mapState().activeLegIndex).toBe(0);
+    expect(mapState().legProgress).toBeGreaterThan(0.4);
+    expect(mapState().legProgress).toBeLessThan(0.6);
+    await act(async () => { await vi.advanceTimersByTimeAsync(7000); });
+    expect(mapState()).toEqual({ activeLegIndex: 1, legProgress: 0, isPlaying: false });
+  });
+
   it('advances, pauses, resumes, ends on the last stop and restarts', async () => {
     render(<StrictMode><App record={record} /></StrictMode>);
     await act(async () => {});
