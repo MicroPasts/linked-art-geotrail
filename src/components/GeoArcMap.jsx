@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { LocateFixed } from 'lucide-react';
-import { Map, NavigationControl, Popup, setWorkerUrl } from 'maplibre-gl';
+import { Map, Marker, NavigationControl, Popup, setWorkerUrl } from 'maplibre-gl';
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import { buildBezierArc, sliceArcAtProgress } from '../lib/arcGeometry';
 import { getLightweightImageUrl } from '../lib/imageOptimizer';
@@ -61,6 +61,7 @@ const BASEMAPS = {
 const DEFAULT_ZOOM = 6;
 const EMPTY_APPEARANCE = {};
 const DEFAULT_FONT = ['Open Sans Bold', 'Arial Unicode MS Bold'];
+const MAX_MAP_LABEL_TITLE_LENGTH = 100;
 
 setWorkerUrl(maplibreWorkerUrl);
 
@@ -172,56 +173,34 @@ function ensureGeoTrailLayers(map, isLight, font) {
       },
     });
   }
-  if (!map.getLayer('event-nodes-label')) {
+  for (const active of [false, true]) {
+    const id = active ? 'event-nodes-active-label' : 'event-nodes-label';
+    if (map.getLayer(id)) continue;
     map.addLayer({
-      id: 'event-nodes-label',
+      id,
       type: 'symbol',
       source: 'event-nodes',
+      filter: ['==', ['get', 'isActive'], active],
       layout: {
         'text-field': [
           'concat',
           ['to-string', ['+', ['get', 'index'], 1]],
           '. ',
-          ['case', ['boolean', ['get', 'sharedPlace'], false], ['concat', ['get', 'title'], ' — '], ''],
           ['get', 'placeLabel'],
+          ['case', ['boolean', ['get', 'sharedPlace'], false], ['concat', ' — ', ['get', 'labelTitle']], ''],
         ],
         'text-size': 12,
+        'text-max-width': 22,
         'text-offset': [0, 1.35],
         'text-anchor': 'top',
         'text-font': font,
+        'text-allow-overlap': active,
+        'text-ignore-placement': active,
       },
       paint: {
         'text-color': isLight ? '#0f172a' : '#f8fafc',
         'text-halo-color': isLight ? '#ffffff' : '#020617',
         'text-halo-width': 1.5,
-      },
-    });
-  }
-
-  if (!map.getSource('transit-head')) {
-    map.addSource('transit-head', {
-      type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] },
-    });
-  }
-  if (!map.getLayer('transit-head-halo')) {
-    map.addLayer({
-      id: 'transit-head-halo',
-      type: 'circle',
-      source: 'transit-head',
-      paint: { 'circle-radius': 14, 'circle-color': '#0284c7', 'circle-opacity': 0.25 },
-    });
-  }
-  if (!map.getLayer('transit-head-core')) {
-    map.addLayer({
-      id: 'transit-head-core',
-      type: 'circle',
-      source: 'transit-head',
-      paint: {
-        'circle-radius': 5.5,
-        'circle-color': '#ffffff',
-        'circle-stroke-width': 2.5,
-        'circle-stroke-color': '#0284c7',
       },
     });
   }
@@ -242,6 +221,7 @@ export function GeoArcMapComponent({
   const containerRef = useRef(null);
   const mapRef = useRef(null);
   const popupRef = useRef(null);
+  const transitMarkerRef = useRef(null);
   const hasCenteredStepRef = useRef(false);
   const lastCameraStateRef = useRef(null);
   const followSuspendedIndexRef = useRef(null);
@@ -264,6 +244,10 @@ export function GeoArcMapComponent({
   const isLightMap = selectedBasemap?.isLight ?? isLight;
   const mapFont = selectedBasemap?.font ?? DEFAULT_FONT;
   const categoryColors = mapAppearance.categoryColors;
+
+  useEffect(() => {
+    if (window.matchMedia?.('(max-width: 640px)').matches) setLegendOpen(false);
+  }, []);
 
   const plottableEvents = useMemo(
     () =>
@@ -409,6 +393,8 @@ export function GeoArcMapComponent({
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
       popupRef.current?.remove();
       popupRef.current = null;
+      transitMarkerRef.current?.remove();
+      transitMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
       currentStyleUrlRef.current = null;
@@ -440,8 +426,6 @@ export function GeoArcMapComponent({
     const paint = [
       ['ghost-arcs-layer', 'line-color', mapAppearance.ghostColor ?? (isLightMap ? '#94a3b8' : '#475569')],
       ['active-trail-glow', 'line-color', mapAppearance.transitColor ?? '#0284c7'],
-      ['transit-head-halo', 'circle-color', mapAppearance.transitColor ?? '#0284c7'],
-      ['transit-head-core', 'circle-stroke-color', mapAppearance.transitColor ?? '#0284c7'],
       ['place-polygons-fill', 'fill-color', mapAppearance.polygonFillColor ?? '#10b981'],
       ['place-polygons-outline', 'line-color', mapAppearance.polygonOutlineColor ?? '#059669'],
     ];
@@ -537,6 +521,7 @@ export function GeoArcMapComponent({
     }`;
     if (imageUrl) {
       const wrapper = document.createElement('div');
+      wrapper.dataset.popupImage = '';
       wrapper.className = `w-full h-32 overflow-hidden rounded-t-xl border-b ${
         isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-950 border-slate-800'
       }`;
@@ -622,6 +607,9 @@ export function GeoArcMapComponent({
           index: plotIdx,
           origIndex: ev.index,
           title: ev.title || ev.placeLabel,
+          labelTitle: (ev.title || ev.placeLabel).length > MAX_MAP_LABEL_TITLE_LENGTH
+            ? `${(ev.title || ev.placeLabel).slice(0, MAX_MAP_LABEL_TITLE_LENGTH - 1).trimEnd()}…`
+            : ev.title || ev.placeLabel,
           placeLabel: ev.placeLabel,
           sharedPlace: sharedCoordinates.has(ev.coordinates.join(',')),
           color: categoryColor(ev.category, categoryColors),
@@ -674,8 +662,7 @@ export function GeoArcMapComponent({
 
     ensureGeoTrailLayers(map, isLightMap, mapFont);
     const trailSource = map.getSource('active-trail');
-    const headSource = map.getSource('transit-head');
-    if (!trailSource || !headSource) return;
+    if (!trailSource) return;
 
     const trailFeatures = [];
 
@@ -706,17 +693,21 @@ export function GeoArcMapComponent({
     const headOverSharedNode = sharedCurrentPlace && headCoord?.every((value, index) => value === currentEvent.coordinates[index]);
 
     trailSource.setData({ type: 'FeatureCollection', features: trailFeatures });
-    headSource.setData({
-      type: 'FeatureCollection',
-      features: headCoord && !headOverSharedNode ? [
-        {
-          type: 'Feature',
-          properties: {},
-          geometry: { type: 'Point', coordinates: headCoord },
-        },
-      ] : [],
-    });
-  }, [activePlotIdx, currentEvent, activeArc, activeSlice, visibleNodes, plottableEvents, legArcs, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors]);
+    if (headCoord && !headOverSharedNode) {
+      if (!transitMarkerRef.current) {
+        const element = document.createElement('div');
+        element.className = 'geotrail-transit-head';
+        element.setAttribute('aria-hidden', 'true');
+        element.appendChild(document.createElement('span'));
+        transitMarkerRef.current = new Marker({ element, anchor: 'center' }).setLngLat(headCoord).addTo(map);
+      }
+      transitMarkerRef.current.getElement().style.setProperty('--geotrail-transit-color', mapAppearance.transitColor ?? '#0284c7');
+      transitMarkerRef.current.setLngLat(headCoord);
+    } else {
+      transitMarkerRef.current?.remove();
+      transitMarkerRef.current = null;
+    }
+  }, [activePlotIdx, currentEvent, activeArc, activeSlice, visibleNodes, plottableEvents, legArcs, isLightMap, mapFont, targetStyleUrl, theme, styleReady, categoryColors, mapAppearance.transitColor]);
 
   return (
     <div className="relative w-full h-full">

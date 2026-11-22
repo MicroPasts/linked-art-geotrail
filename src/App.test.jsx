@@ -70,6 +70,18 @@ describe('record loader', () => {
 });
 
 describe('playback in Strict Mode', () => {
+  it('updates animation progress on consecutive 60 Hz frames', async () => {
+    render(<App record={record} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    let previous = 0;
+    for (let frame = 0; frame < 5; frame++) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+      expect(mapState().legProgress).toBeGreaterThan(previous);
+      previous = mapState().legProgress;
+    }
+  });
+
   it('plays the Piebald Horse final leg through to its last event', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [] }) });
     vi.stubGlobal('fetch', fetch);

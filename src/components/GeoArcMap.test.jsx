@@ -7,7 +7,7 @@ import { GeoArcMap } from './GeoArcMap';
 import { extractLinkedArtTrail } from '../lib/linkedArtExtractor';
 import { SAMPLE_PIEBALD_RECORD } from '../data/piebaldRecord';
 
-const mocks = vi.hoisted(() => ({ maps: [], popups: [] }));
+const mocks = vi.hoisted(() => ({ maps: [], popups: [], markers: [] }));
 
 vi.mock('maplibre-gl', () => {
   class Map {
@@ -58,7 +58,14 @@ vi.mock('maplibre-gl', () => {
     remove() { this.close?.(); }
     getElement() { return this.element; }
   }
-  return { Map, Popup, NavigationControl: class {}, setWorkerUrl: vi.fn() };
+  class Marker {
+    constructor({ element }) { this.element = element; this.removed = false; mocks.markers.push(this); }
+    setLngLat(coordinates) { this.coordinates = coordinates; return this; }
+    addTo() { return this; }
+    getElement() { return this.element; }
+    remove() { this.removed = true; }
+  }
+  return { Map, Marker, Popup, NavigationControl: class {}, setWorkerUrl: vi.fn() };
 });
 
 vi.mock('maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url', () => ({
@@ -73,6 +80,7 @@ const events = [
 beforeEach(() => {
   mocks.maps.length = 0;
   mocks.popups.length = 0;
+  mocks.markers.length = 0;
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
 });
 
@@ -97,7 +105,7 @@ describe('map style and popup lifecycle', () => {
       rerender(<GeoArcMap events={stops} isPlaying legProgress={progress} />);
       const trail = map.getSource('active-trail').data.features[0].geometry.coordinates;
       expect(map.jumpTo).toHaveBeenLastCalledWith({ center: trail.at(-1) });
-      expect(map.jumpTo.mock.lastCall[0].center).toEqual(map.getSource('transit-head').data.features[0].geometry.coordinates);
+      expect(map.jumpTo.mock.lastCall[0].center).toEqual(mocks.markers.at(-1).coordinates);
     }
     expect(map.easeTo).not.toHaveBeenCalled();
     map.jumpTo.mockClear();
@@ -140,7 +148,7 @@ describe('map style and popup lifecycle', () => {
     expect(map.jumpTo).not.toHaveBeenCalled();
     rerender(<GeoArcMap events={stops} activeLegIndex={1} isPlaying legProgress={0.5} />);
     expect(map.jumpTo).toHaveBeenLastCalledWith({
-      center: map.getSource('transit-head').data.features[0].geometry.coordinates,
+      center: mocks.markers.at(-1).coordinates,
     });
   });
 
@@ -343,9 +351,14 @@ describe('map style and popup lifecycle', () => {
     rerender(<GeoArcMap {...props} activeLegIndex={1} isPlaying legProgress={0.5} />);
     expect(nodes()).toHaveLength(1);
     expect(nodes()[0].properties).toMatchObject({ origIndex: 1, index: 1, title: 'Found', placeLabel: 'Rome', color: '#abcdef', pulseOwner: true, isActive: true });
-    expect(map.getSource('transit-head').data.features).toHaveLength(0);
-    const label = map.getLayer('event-nodes-label').layout['text-field'];
-    expect(label).toEqual(['concat', ['to-string', ['+', ['get', 'index'], 1]], '. ', ['case', ['boolean', ['get', 'sharedPlace'], false], ['concat', ['get', 'title'], ' — '], ''], ['get', 'placeLabel']]);
+    expect(mocks.markers.at(-1).removed).toBe(true);
+    const activeLabel = map.getLayer('event-nodes-active-label');
+    expect(activeLabel.filter).toEqual(['==', ['get', 'isActive'], true]);
+    expect(activeLabel.layout['text-allow-overlap']).toBe(true);
+    expect(activeLabel.layout['text-ignore-placement']).toBe(true);
+    expect(map.getLayer('event-nodes-label').filter).toEqual(['==', ['get', 'isActive'], false]);
+    const label = activeLabel.layout['text-field'];
+    expect(label).toEqual(['concat', ['to-string', ['+', ['get', 'index'], 1]], '. ', ['get', 'placeLabel'], ['case', ['boolean', ['get', 'sharedPlace'], false], ['concat', ' — ', ['get', 'labelTitle']], '']]);
     act(() => map.emit('click', { features: [nodes()[0]] }));
     expect(onSelectEvent).toHaveBeenCalledWith(1);
 
@@ -360,6 +373,35 @@ describe('map style and popup lifecycle', () => {
     expect(nodes()[0].properties).toMatchObject({ origIndex: 1, title: 'Found', color: '#abcdef', pulseOwner: true });
     rerender(<GeoArcMap {...props} activeLegIndex={0} theme="light" />);
     expect(nodes()[0].properties).toMatchObject({ origIndex: 0, title: 'Made', color: '#d97706', pulseOwner: false });
+  });
+
+  it('keeps long shared-place map labels bounded while retaining full event titles', () => {
+    const title = 'A long event title '.repeat(20);
+    const stops = [events[0], { ...events[1], title, placeLabel: 'Rome', coordinates: events[0].coordinates }];
+    render(<GeoArcMap events={stops} activeLegIndex={1} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    const node = map.getSource('event-nodes').data.features[0];
+    expect(node.properties.title).toBe(title);
+    expect(node.properties.labelTitle.length).toBeLessThanOrEqual(100);
+    expect(node.properties.labelTitle).toMatch(/…$/);
+    expect(mocks.popups.at(-1).element.textContent).toContain(title);
+    expect(map.getLayer('event-nodes-active-label').layout['text-max-width']).toBe(22);
+  });
+
+  it('moves and cleans up the transit marker without a GeoJSON point source', () => {
+    const { rerender, unmount } = render(<GeoArcMap events={events} isPlaying legProgress={0.1} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    const marker = mocks.markers[0];
+    const first = marker.coordinates;
+    rerender(<GeoArcMap events={events} isPlaying legProgress={0.2} />);
+    expect(mocks.markers).toHaveLength(1);
+    expect(marker.coordinates).not.toEqual(first);
+    expect(map.getSource('transit-head')).toBeUndefined();
+    expect(marker.getElement().getAttribute('aria-hidden')).toBe('true');
+    unmount();
+    expect(marker.removed).toBe(true);
   });
 
   it('keeps a static shared-place halo when reduced motion is requested', () => {
@@ -409,6 +451,15 @@ describe('map style and popup lifecycle', () => {
     expect(within(legend).getByText('Production').querySelector('span').style.backgroundColor).toBe('rgb(217, 119, 6)');
   });
 
+  it('starts the legend collapsed on narrow screens and allows opening it', () => {
+    vi.stubGlobal('matchMedia', vi.fn((query) => ({ matches: query === '(max-width: 640px)' })));
+    render(<GeoArcMap events={events} />);
+    const button = screen.getByRole('button', { name: 'Map legend' });
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(button);
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+  });
+
   it('restores moving and ghost trails after switching light and dark styles', () => {
     const props = { events, activeLegIndex: 0, legProgress: 0.5, isPlaying: true };
     const { rerender } = render(<GeoArcMap {...props} theme="dark" />);
@@ -424,7 +475,7 @@ describe('map style and popup lifecycle', () => {
     expect(map.getLayer('ghost-arcs-layer').paint['line-color']).toBe('#94a3b8');
     expect(map.getSource('ghost-arcs').data.features).toHaveLength(1);
     expect(map.getSource('active-trail').data.features).toHaveLength(1);
-    expect(map.getSource('transit-head').data.features).toHaveLength(1);
+    expect(mocks.markers.at(-1).removed).toBe(false);
     expect(map.getSource('event-nodes').data.features).toHaveLength(1);
     expect(mocks.popups.at(-1).coordinates).toEqual(events[0].coordinates);
 
@@ -524,7 +575,7 @@ describe('map style and popup lifecycle', () => {
     rerender(<GeoArcMap events={stops} activeLegIndex={0} />);
     expect(map.getSource('event-nodes').data.features).toHaveLength(0);
     expect(map.getSource('active-trail').data.features).toHaveLength(0);
-    expect(map.getSource('transit-head').data.features).toHaveLength(0);
+    expect(mocks.markers.at(-1).removed).toBe(true);
     expect(mocks.popups).toHaveLength(1);
     expect(removePopup).toHaveBeenCalledOnce();
 
@@ -568,7 +619,7 @@ describe('map style and popup lifecycle', () => {
     act(() => map.emit('style.load'));
     expect(container.querySelector('.geotrail-map.custom-map').style.opacity).toBe('0.7');
     expect(map.getLayer('ghost-arcs-layer').paint['line-color']).toBe('#123456');
-    expect(map.getLayer('transit-head-halo').paint['circle-color']).toBe('#abcdef');
+    expect(mocks.markers.at(-1).getElement().style.getPropertyValue('--geotrail-transit-color')).toBe('#abcdef');
     expect(map.getLayer('place-polygons-fill').paint['fill-color']).toBe('#112233');
     expect(map.getSource('active-trail').data.features[0].properties.color).toBe('#654321');
     expect(mocks.popups.at(-1).getElement().querySelector('.geotrail-popup.custom-popup').style.color).toBe('red');
@@ -582,7 +633,7 @@ describe('map style and popup lifecycle', () => {
 
     rerender(<GeoArcMap {...props} mapAppearance={{ ghostColor: '#987654' }} theme="light" />);
     expect(map.getLayer('ghost-arcs-layer').paint['line-color']).toBe('#987654');
-    expect(map.getLayer('transit-head-halo').paint['circle-color']).toBe('#0284c7');
+    expect(mocks.markers.at(-1).getElement().style.getPropertyValue('--geotrail-transit-color')).toBe('#0284c7');
     expect(map.getSource('active-trail').data.features[0].properties.color).toBe('#059669');
   });
 

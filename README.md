@@ -18,10 +18,13 @@ An interactive geospatial event-arc viewer for **Linked Art** (`application/ld+j
   have no coordinates, the trail to the next mapped stop draws during the
   final leg before that stop.
 * **Map legend and shared places:** A collapsible floating legend explains the
-  map colours. When two or more revealed events have identical coordinates,
-  their shared point pulses and shows the latest revealed event's title, place
-  and category colour. Clicking it selects that event. The point uses a static
-  halo when reduced motion is preferred.
+  map colours and starts collapsed on narrow screens. When two or more revealed
+  events have identical coordinates, their shared point pulses and shows the
+  latest revealed event's title, place and category colour. Long map labels are
+  shortened; the full title remains in the event list. Clicking the point
+  selects that event. The point uses a static halo when reduced motion is
+  preferred. Popup images are hidden on narrow screens to leave more room for
+  map labels.
 * **Recenter map:** Return to the most recently revealed mapped stop without
   changing the zoom. The control is disabled until a mapped stop is available.
 * **WKT and text-place resolution:** Supports `POINT`, `POLYGON`, and `MULTIPOLYGON`; text places can use the built-in gazetteer or a cached Nominatim fallback.

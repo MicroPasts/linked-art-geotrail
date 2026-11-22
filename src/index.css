@@ -30,3 +30,36 @@ body,
   font-size: 18px;
   padding: 4px 8px;
 }
+
+.geotrail-transit-head {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.geotrail-transit-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--geotrail-transit-color);
+  opacity: 0.25;
+}
+
+.geotrail-transit-head > span {
+  position: relative;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: 2.5px solid var(--geotrail-transit-color);
+  border-radius: 50%;
+  background: white;
+}
+
+@media (max-width: 640px) {
+  .geotrail-popup [data-popup-image] {
+    display: none;
+  }
+}

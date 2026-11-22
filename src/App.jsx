@@ -10,7 +10,7 @@ const GeoArcMap = lazy(() =>
   import('./components/GeoArcMap').then((m) => ({ default: m.GeoArcMap }))
 );
 
-const ANIMATION_FRAME_MS = 1000 / 30;
+const ANIMATION_FRAME_MS = 1000 / 60;
 
 export function App({
   record = SAMPLE_LINKED_ART_RECORD,
@@ -79,8 +79,8 @@ export function App({
       lastTime = now;
       elapsedMs += dt;
 
-      if (now - lastRenderTime >= ANIMATION_FRAME_MS) {
-        lastRenderTime = now;
+      if (now - lastRenderTime >= ANIMATION_FRAME_MS - 1) {
+        lastRenderTime = Math.min(now, Math.max(lastRenderTime + ANIMATION_FRAME_MS, now - ANIMATION_FRAME_MS));
         if (arrivalPauseRef.current > 0) {
           arrivalPauseRef.current = Math.max(0, arrivalPauseRef.current - elapsedMs);
           elapsedMs = 0;
@@ -148,6 +148,10 @@ export function App({
     setLegProgress(0);
   }, []);
 
+  const handleToggleTheme = useCallback(() => {
+    setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  }, []);
+
   const handleTogglePlay = useCallback(() => {
     if (trail.events.length < 2) return;
     if (isPlaying) {
@@ -181,7 +185,7 @@ export function App({
         theme={theme}
         classNames={classNames}
         styles={styles}
-        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        onToggleTheme={handleToggleTheme}
         onTogglePlay={handleTogglePlay}
         onReset={handleReset}
         onSelectStep={handleSelectStep}
