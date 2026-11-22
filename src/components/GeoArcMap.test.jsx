@@ -142,6 +142,26 @@ describe('map style and popup lifecycle', () => {
     });
   });
 
+  it('draws the complete final leg and reveals the last stop when playback ends', () => {
+    const stops = [
+      events[0],
+      { ...events[1], coordinates: null },
+      { ...events[1], index: 2, coordinates: [170, 75] },
+      { ...events[1], index: 3, coordinates: [-170, 75] },
+    ];
+    const { rerender } = render(<GeoArcMap events={stops} activeLegIndex={2} isPlaying legProgress={0.75} />);
+    const map = mocks.maps[0];
+    act(() => map.emit('style.load'));
+    const trail = () => map.getSource('active-trail').data.features;
+    expect(trail()).toHaveLength(2);
+    expect(map.getSource('event-nodes').data.features.map((node) => node.properties.origIndex)).toEqual([0, 2]);
+    rerender(<GeoArcMap events={stops} activeLegIndex={3} />);
+    expect(trail()).toHaveLength(2);
+    expect(trail()[1].geometry.coordinates.at(-1)).toEqual([190, 75]);
+    expect(map.getSource('event-nodes').data.features.map((node) => node.properties.origIndex)).toEqual([0, 2, 3]);
+    expect(mocks.popups.at(-1).coordinates).toEqual(stops[3].coordinates);
+  });
+
   it('switches basemaps without losing trail state, popup dismissal or custom theme styles', () => {
     const mapStyles = { dark: 'https://example.test/dark', light: 'https://example.test/light' };
     const props = { events, mapStyles, activeLegIndex: 0, legProgress: 0.5, isPlaying: true };

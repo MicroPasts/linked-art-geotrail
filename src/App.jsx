@@ -1,6 +1,6 @@
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { enrichTrailWithGeocoding, extractLinkedArtTrail } from './lib/linkedArtExtractor';
-import { legDuration } from './lib/animationTiming';
+import { legDuration, LONG_LEG_PAUSE_MS, MIN_LEG_DURATION_MS } from './lib/animationTiming';
 import { loadLinkedArtInput } from './lib/linkedArtFetcher';
 import { SAMPLE_LINKED_ART_RECORD } from './data/sampleRecord';
 import { EventSidebar } from './components/EventSidebar';
@@ -28,6 +28,7 @@ export function App({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [parseError, setParseError] = useState(null);
+  const arrivalPauseRef = useRef(0);
   const legDurations = useMemo(
     () => trail.events.map((_, index) => legDuration(trail.events, index)),
     [trail.events]
@@ -39,6 +40,7 @@ export function App({
 
   useEffect(() => {
     const nextTrail = extractLinkedArtTrail(record || SAMPLE_LINKED_ART_RECORD);
+    arrivalPauseRef.current = 0;
     setTrail(nextTrail);
     setActiveLegIndex(0);
     setLegProgress(0);
@@ -79,9 +81,16 @@ export function App({
 
       if (now - lastRenderTime >= ANIMATION_FRAME_MS) {
         lastRenderTime = now;
+        if (arrivalPauseRef.current > 0) {
+          arrivalPauseRef.current = Math.max(0, arrivalPauseRef.current - elapsedMs);
+          elapsedMs = 0;
+          frameId = requestAnimationFrame(tick);
+          return;
+        }
         progress += elapsedMs / legDurations[currentIndex];
         elapsedMs = 0;
         if (progress >= 1) {
+          const completedDuration = legDurations[currentIndex];
           currentIndex += 1;
           setActiveLegIndex(currentIndex);
           progress = 0;
@@ -89,6 +98,9 @@ export function App({
             setLegProgress(progress);
             setIsPlaying(false);
             return;
+          }
+          if (completedDuration > MIN_LEG_DURATION_MS) {
+            arrivalPauseRef.current = LONG_LEG_PAUSE_MS;
           }
         }
         setLegProgress(progress);
@@ -107,6 +119,7 @@ export function App({
     try {
       const doc = await loadLinkedArtInput(raw);
       const nextTrail = extractLinkedArtTrail(doc);
+      arrivalPauseRef.current = 0;
       setTrail(nextTrail);
       setActiveLegIndex(0);
       setLegProgress(0);
@@ -122,12 +135,14 @@ export function App({
   }, []);
 
   const handleSelectStep = useCallback((idx) => {
+    arrivalPauseRef.current = 0;
     setIsPlaying(false);
     setActiveLegIndex(idx);
     setLegProgress(0);
   }, []);
 
   const handleReset = useCallback(() => {
+    arrivalPauseRef.current = 0;
     setIsPlaying(false);
     setActiveLegIndex(0);
     setLegProgress(0);
@@ -140,6 +155,7 @@ export function App({
       return;
     }
     if (activeLegIndex >= trail.events.length - 1) {
+      arrivalPauseRef.current = 0;
       setActiveLegIndex(0);
       setLegProgress(0);
     }

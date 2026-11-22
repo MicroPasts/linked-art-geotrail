@@ -1,4 +1,4 @@
-import { s as Lg, g as Fg, j as qe, c as Nt } from "./index-FvqCtUN2.js";
+import { s as Lg, g as Fg, j as qe, c as Nt } from "./index-CJxve0qz.js";
 import Bg, { useRef as Ut, useState as ba, useId as Og, useMemo as Fi, useEffect as Pr } from "react";
 import { LocateFixed as $g } from "lucide-react";
 /**
@@ -22872,18 +22872,18 @@ const CA = "" + new URL("assets/maplibre-gl-worker-C1Au-ZPx.js", import.meta.url
 function AA(e, t, r = 90, i = 0.22) {
   if (!Array.isArray(e) || !Array.isArray(t) || e.length < 2 || t.length < 2)
     return [];
-  const [a, s] = e, [n, o] = t;
-  if (Math.abs(n - a) < 1e-6 && Math.abs(o - s) < 1e-6)
-    return [[a, s], [n, o]];
-  const l = (a + n) / 2, u = (s + o) / 2, h = n - a;
-  let d = -(o - s) * i, p = h * i;
-  p < 0 && (d = -d, p = -p);
-  const f = l + d, m = u + p, _ = [];
-  for (let g = 0; g <= r; g++) {
-    const v = g / r, x = 1 - v, y = x * x * a + 2 * x * v * f + v * v * n, w = x * x * s + 2 * x * v * m + v * v * o;
-    _.push([y, w]);
+  const [a, s] = e, [n, o] = t, l = a + (((n - a + 180) % 360 + 360) % 360 - 180);
+  if (Math.abs(l - a) < 1e-6 && Math.abs(o - s) < 1e-6)
+    return [[a, s], [l, o]];
+  const u = (a + l) / 2, h = (s + o) / 2, c = l - a;
+  let p = -(o - s) * i, f = c * i;
+  f < 0 && (p = -p, f = -f);
+  const m = u + p, _ = Math.max(-85, Math.min(85, h + f)), g = [];
+  for (let v = 0; v <= r; v++) {
+    const x = v / r, y = 1 - x, w = y * y * a + 2 * y * x * m + x * x * l, b = y * y * s + 2 * y * x * _ + x * x * o;
+    g.push([w, b]);
   }
-  return _;
+  return g;
 }
 function zA(e, t) {
   if (!Array.isArray(e) || e.length === 0)

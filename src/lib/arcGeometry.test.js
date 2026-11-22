@@ -14,6 +14,17 @@ describe('buildBezierArc', () => {
     expect(buildBezierArc([1, 2], [1, 2])).toEqual([[1, 2], [1, 2]]);
     expect(buildBezierArc(null, [1, 2])).toEqual([]);
   });
+
+  it('crosses the antimeridian on the short path without leaving map latitude bounds', () => {
+    const points = buildBezierArc([170, 75], [-170, 75]);
+    expect(points[0]).toEqual([170, 75]);
+    expect(points.at(-1)).toEqual([190, 75]);
+    expect(points.every(([lon, lat]) => lon >= 170 && lon <= 190 && lat <= 85)).toBe(true);
+    const opposite = buildBezierArc([-170, 75], [170, 75]);
+    expect(opposite.at(-1)).toEqual([-190, 75]);
+    const long = buildBezierArc([-170, 80], [0, 80]);
+    expect(long.every(([, lat]) => lat <= 85)).toBe(true);
+  });
 });
 
 describe('sliceArcAtProgress', () => {

@@ -69,6 +69,47 @@ describe('record loader', () => {
 });
 
 describe('playback in Strict Mode', () => {
+  it('pauses at a long-distance arrival, preserves the pause, then draws the final leg', async () => {
+    const journey = {
+      ...record,
+      encountered: [{ _label: 'New York', took_place_at: { _label: 'New York', defined_by: 'POINT (-74 40.7)' } }],
+      current_location: { _label: 'Boston', defined_by: 'POINT (-71 42)' },
+    };
+    render(<StrictMode><App record={journey} /></StrictMode>);
+    await act(async () => {});
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9800); });
+    expect(mapState()).toEqual({ activeLegIndex: 1, legProgress: 0, isPlaying: true });
+    fireEvent.click(screen.getByTitle('Pause animation'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(mapState()).toEqual({ activeLegIndex: 1, legProgress: 0, isPlaying: false });
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+    expect(mapState()).toEqual({ activeLegIndex: 1, legProgress: 0, isPlaying: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
+    expect(mapState().activeLegIndex).toBe(1);
+    expect(mapState().legProgress).toBeGreaterThan(0);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(mapState()).toEqual({ activeLegIndex: 2, legProgress: 0, isPlaying: false });
+  });
+
+  it('clears the arrival pause when resetting or seeking', async () => {
+    const journey = {
+      ...record,
+      encountered: [{ took_place_at: { _label: 'New York', defined_by: 'POINT (-74 40.7)' } }],
+      current_location: { _label: 'Boston', defined_by: 'POINT (-71 42)' },
+    };
+    render(<App record={journey} />);
+    await act(async () => {});
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9800); });
+    fireEvent.click(screen.getByTitle('Restart from origin'));
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '1' } });
+    fireEvent.click(screen.getByTitle('Play trajectory'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(mapState().legProgress).toBeGreaterThan(0.2);
+  });
+
   it('takes longer to draw long-distance legs', async () => {
     const longRecord = {
       ...record,

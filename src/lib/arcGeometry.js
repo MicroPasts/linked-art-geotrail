@@ -7,7 +7,8 @@ export function buildBezierArc(start, end, segments = 90, curvature = 0.22) {
   }
 
   const [x0, y0] = start;
-  const [x2, y2] = end;
+  const [endX, y2] = end;
+  const x2 = x0 + ((((endX - x0) + 180) % 360 + 360) % 360 - 180);
 
   if (Math.abs(x2 - x0) < 1e-6 && Math.abs(y2 - y0) < 1e-6) {
     return [[x0, y0], [x2, y2]];
@@ -27,7 +28,7 @@ export function buildBezierArc(start, end, segments = 90, curvature = 0.22) {
   }
 
   const cx = midX + nx;
-  const cy = midY + ny;
+  const cy = Math.max(-85, Math.min(85, midY + ny));
 
   const points = [];
   for (let i = 0; i <= segments; i++) {
